@@ -8,7 +8,10 @@ const GEMINI_MODEL =
 const GEMINI_VOICE = process.env.GEMINI_VOICE || "Puck";
 
 const SYSTEM_PROMPT = `
-You are a friendly, helpful AI phone assistant.
+You are Maya, a friendly appointment-booking assistant for Brightside Dental Clinic.
+Keep replies short and conversational. Ask one question at a time.
+Collect the caller's name, preferred date and time, and reason for the visit,
+then confirm the details back.
 
 - Introduce yourself as an AI assistant.
 - Speak naturally and keep responses concise.
@@ -19,13 +22,25 @@ You are a friendly, helpful AI phone assistant.
 - Do not request passwords, OTPs, or sensitive payment information.
 `;
 
+const END_RULES = `
+Call-ending rules:
+- When the caller says goodbye or the task is complete, speak a short,
+  natural goodbye first.
+- Then call end_call with a brief reason.
+- Do not call end_call while the caller still needs help or has asked another question.
+- After requesting end_call, do not start another conversation turn.
+`;
+
 const EXOTEL_RATE = 16000;
 const GEMINI_INPUT_RATE = 16000;
 const GEMINI_OUTPUT_RATE = 24000;
 
-// Exotel outbound audio frames: 3200 bytes = 100 ms
-// for 16 kHz, signed 16-bit, mono PCM.
+// 3,200 bytes = 100 ms of 16 kHz, 16-bit mono PCM.
 const EXOTEL_FRAME_BYTES = 3200;
+const EXOTEL_FRAME_INTERVAL_MS = 100;
+
+const MAX_INPUT_QUEUE_CHUNKS = 100;
+const MAX_OUTPUT_QUEUE_FRAMES = 100;
 
 const SUPPORTED_RATES = [8000, 16000, 24000];
 const SUPPORTED_ENCODINGS = ["audio/x-raw", "base64"];
@@ -40,32 +55,61 @@ export function registerExotelMedia(server) {
   wss.on("connection", (exotel) => {
     let gemini = null;
     let streamSid = null;
-    let setupComplete = false;
-    let closed = false;
-    let inputQueue = [];
-    let outputBuffer = Buffer.alloc(0);
+    let callSid = null;
     let inputRate = null;
 
+    let setupComplete = false;
+    let closed = false;
+    let endCallRequested = false;
+    let endCallTimer = null;
+    let outputTimer = null;
+
+    let inputQueue = [];
+    let outputBuffer = Buffer.alloc(0);
+    let outputQueue = [];
+    let assistantAudioBytesThisTurn = 0;
+
     function sendExotel(message) {
-      if (exotel.readyState === WebSocket.OPEN) {
-        exotel.send(JSON.stringify(message));
-      }
+      if (exotel.readyState !== WebSocket.OPEN) return false;
+
+      exotel.send(JSON.stringify(message));
+      return true;
     }
 
     function sendGemini(message) {
-      if (gemini?.readyState === WebSocket.OPEN) {
-        gemini.send(JSON.stringify(message));
-        return true;
+      if (gemini?.readyState !== WebSocket.OPEN) return false;
+
+      gemini.send(JSON.stringify(message));
+      return true;
+    }
+
+    function stopOutputPlayback() {
+      if (outputTimer) {
+        clearInterval(outputTimer);
+        outputTimer = null;
       }
 
-      return false;
+      outputQueue = [];
+      outputBuffer = Buffer.alloc(0);
     }
 
     function cleanup() {
       if (closed) return;
 
       closed = true;
+
+      if (endCallTimer) {
+        clearTimeout(endCallTimer);
+        endCallTimer = null;
+      }
+
+      if (outputTimer) {
+        clearInterval(outputTimer);
+        outputTimer = null;
+      }
+
       inputQueue = [];
+      outputQueue = [];
       outputBuffer = Buffer.alloc(0);
 
       if (
@@ -81,8 +125,7 @@ export function registerExotelMedia(server) {
       if (closed || !pcm?.length) return;
 
       if (!setupComplete) {
-        // Bound the queue so a slow upstream cannot exhaust memory.
-        if (inputQueue.length < 100) {
+        if (inputQueue.length < MAX_INPUT_QUEUE_CHUNKS) {
           inputQueue.push(pcm);
         }
 
@@ -99,35 +142,52 @@ export function registerExotelMedia(server) {
       });
     }
 
-    function flushAudioToCaller(padFinalFrame = false) {
-      if (closed || !streamSid) return;
+    function scheduleCallEndAfterPlayback() {
+      if (!endCallRequested || closed || endCallTimer) return;
 
-      while (outputBuffer.length >= EXOTEL_FRAME_BYTES) {
-        const frame = outputBuffer.subarray(0, EXOTEL_FRAME_BYTES);
+      // Wait until the generated goodbye frames have played out of
+      // the local queue before closing the Exotel media stream.
+      if (outputQueue.length > 0 || outputBuffer.length > 0 || outputTimer) {
+        endCallTimer = setTimeout(() => {
+          endCallTimer = null;
+          scheduleCallEndAfterPlayback();
+        }, EXOTEL_FRAME_INTERVAL_MS);
 
-        outputBuffer = outputBuffer.subarray(EXOTEL_FRAME_BYTES);
-
-        sendExotel({
-          event: "media",
-          stream_sid: streamSid,
-          media: {
-            payload: frame.toString("base64"),
-          },
-        });
+        return;
       }
 
-      // A final short audio fragment must not remain stuck in the buffer.
-      // Pad the final frame with silence so it meets the minimum frame size.
-      if (padFinalFrame && outputBuffer.length > 0) {
-        const requiredLength = Math.max(
-          EXOTEL_FRAME_BYTES,
-          Math.ceil(outputBuffer.length / 320) * 320,
-        );
+      console.log("Goodbye audio queue drained; ending Exotel stream", {
+        callSid,
+      });
 
-        const frame = Buffer.alloc(requiredLength);
-        outputBuffer.copy(frame);
+      endTelephoneCall();
+    }
 
-        outputBuffer = Buffer.alloc(0);
+    function startOutputPlayback() {
+      if (outputTimer || closed) return;
+
+      outputTimer = setInterval(() => {
+        if (closed || exotel.readyState !== WebSocket.OPEN) {
+          if (outputTimer) {
+            clearInterval(outputTimer);
+            outputTimer = null;
+          }
+
+          return;
+        }
+
+        const frame = outputQueue.shift();
+
+        if (!frame) {
+          clearInterval(outputTimer);
+          outputTimer = null;
+
+          if (endCallRequested) {
+            scheduleCallEndAfterPlayback();
+          }
+
+          return;
+        }
 
         sendExotel({
           event: "media",
@@ -136,6 +196,65 @@ export function registerExotelMedia(server) {
             payload: frame.toString("base64"),
           },
         });
+      }, EXOTEL_FRAME_INTERVAL_MS);
+    }
+
+    function queuePcmForCaller(pcm) {
+      if (closed || !streamSid || !pcm?.length) return;
+
+      outputBuffer = Buffer.concat([outputBuffer, pcm]);
+
+      while (outputBuffer.length >= EXOTEL_FRAME_BYTES) {
+        const frame = Buffer.from(outputBuffer.subarray(0, EXOTEL_FRAME_BYTES));
+
+        outputBuffer = outputBuffer.subarray(EXOTEL_FRAME_BYTES);
+        outputQueue.push(frame);
+      }
+
+      if (outputQueue.length > MAX_OUTPUT_QUEUE_FRAMES) {
+        console.warn(
+          "Outgoing audio backlog exceeded limit; clearing playback",
+        );
+
+        stopOutputPlayback();
+
+        sendExotel({
+          event: "clear",
+          stream_sid: streamSid,
+        });
+
+        // Do not leave an end-call timer running against discarded audio.
+        if (endCallTimer) {
+          clearTimeout(endCallTimer);
+          endCallTimer = null;
+        }
+
+        if (endCallRequested) {
+          scheduleCallEndAfterPlayback();
+        }
+
+        return;
+      }
+
+      startOutputPlayback();
+    }
+
+    function finishAudioTurn() {
+      if (closed || !streamSid) return;
+
+      // Pad the final partial frame with silence.
+      if (outputBuffer.length > 0) {
+        const paddedFrame = Buffer.alloc(EXOTEL_FRAME_BYTES);
+        outputBuffer.copy(paddedFrame);
+
+        outputBuffer = Buffer.alloc(0);
+        outputQueue.push(paddedFrame);
+      }
+
+      startOutputPlayback();
+
+      if (endCallRequested) {
+        scheduleCallEndAfterPlayback();
       }
     }
 
@@ -146,16 +265,38 @@ export function registerExotelMedia(server) {
 
       if (geminiPcm.length === 0) return;
 
-      // Gemini audio is expected to be signed 16-bit little-endian PCM.
+      // Assumes Gemini output is signed 16-bit little-endian PCM at 24 kHz.
       const exotelPcm = resamplePcm16(
         geminiPcm,
         GEMINI_OUTPUT_RATE,
         EXOTEL_RATE,
       );
 
-      outputBuffer = Buffer.concat([outputBuffer, exotelPcm]);
+      assistantAudioBytesThisTurn += exotelPcm.length;
+      queuePcmForCaller(exotelPcm);
+    }
 
-      flushAudioToCaller();
+    function endTelephoneCall() {
+      if (closed) return;
+
+      console.log("AI requested call termination", { callSid });
+
+      if (endCallTimer) {
+        clearTimeout(endCallTimer);
+        endCallTimer = null;
+      }
+
+      // Closing the stream may cause Exotel to end the call, depending
+      // on the Connect Voice AI behavior configured for this account.
+      // It is not a universal substitute for a provider hangup operation.
+      cleanup();
+
+      if (
+        exotel.readyState === WebSocket.OPEN ||
+        exotel.readyState === WebSocket.CONNECTING
+      ) {
+        exotel.close(1000, "Assistant finished the call");
+      }
     }
 
     function connectGemini() {
@@ -166,7 +307,11 @@ export function registerExotelMedia(server) {
       if (!key) {
         console.error("GEMINI_API_KEY is missing");
         cleanup();
-        exotel.close();
+
+        if (exotel.readyState === WebSocket.OPEN) {
+          exotel.close();
+        }
+
         return;
       }
 
@@ -197,8 +342,29 @@ export function registerExotelMedia(server) {
                 },
               },
               systemInstruction: {
-                parts: [{ text: SYSTEM_PROMPT }],
+                parts: [{ text: SYSTEM_PROMPT + END_RULES }],
               },
+              tools: [
+                {
+                  functionDeclarations: [
+                    {
+                      name: "end_call",
+                      description:
+                        "Ends the current phone call after the assistant has spoken its goodbye.",
+                      parameters: {
+                        type: "OBJECT",
+                        properties: {
+                          reason: {
+                            type: "STRING",
+                            description: "Why the conversation is ending",
+                          },
+                        },
+                        required: ["reason"],
+                      },
+                    },
+                  ],
+                },
+              ],
               inputAudioTranscription: {},
               outputAudioTranscription: {},
             },
@@ -232,7 +398,6 @@ export function registerExotelMedia(server) {
 
           console.log("Gemini session ready");
 
-          // Request a spoken greeting once the session is ready.
           sendGemini({
             realtimeInput: {
               text:
@@ -252,13 +417,14 @@ export function registerExotelMedia(server) {
         const content = message.serverContent;
 
         if (content?.interrupted) {
-          // Clear queued playback when the caller interrupts.
+          stopOutputPlayback();
+
           sendExotel({
             event: "clear",
             stream_sid: streamSid,
           });
 
-          outputBuffer = Buffer.alloc(0);
+          assistantAudioBytesThisTurn = 0;
         }
 
         if (content?.inputTranscription?.text) {
@@ -269,24 +435,36 @@ export function registerExotelMedia(server) {
           console.log("Assistant:", content.outputTranscription.text);
         }
 
+        // Queue any audio in this response before processing turn completion.
         for (const part of content?.modelTurn?.parts ?? []) {
           if (part.inlineData?.data) {
             sendAudioToCaller(part.inlineData.data);
           }
         }
 
-        if (content?.turnComplete) {
-          flushAudioToCaller(true);
+        // Record the function call request. The actual hangup is deferred
+        // until the assistant's turn completes and queued goodbye audio drains.
+        for (const call of message.toolCall?.functionCalls ?? []) {
+          if (call.name === "end_call") {
+            console.log("Gemini requested end_call", {
+              reason: call.args?.reason || "Conversation finished",
+            });
+
+            endCallRequested = true;
+          } else {
+            console.warn("Unknown Gemini function:", call.name);
+          }
         }
 
-        if (message.toolCall?.functionCalls?.length) {
-          console.log("Gemini requested a function call");
+        if (content?.turnComplete) {
+          finishAudioTurn();
+
+          assistantAudioBytesThisTurn = 0;
         }
       });
 
       gemini.on("error", (error) => {
         console.error("Gemini WebSocket error:", error.message);
-
         cleanup();
 
         if (exotel.readyState === WebSocket.OPEN) {
@@ -323,7 +501,8 @@ export function registerExotelMedia(server) {
           streamSid =
             start.stream_sid || start.streamSid || message.stream_sid || null;
 
-          // Accommodate both spellings seen in stream implementations.
+          callSid = start.call_sid || start.callSid || null;
+
           const format =
             start.media_format ??
             start.mediaFormat ??
@@ -336,7 +515,7 @@ export function registerExotelMedia(server) {
 
           console.log("Exotel call started", {
             streamSid,
-            callSid: start.call_sid ?? start.callSid,
+            callSid,
             mediaFormat: format,
           });
 
@@ -345,7 +524,6 @@ export function registerExotelMedia(server) {
             !SUPPORTED_RATES.includes(inputRate)
           ) {
             console.error("Unsupported Exotel media format", format);
-
             cleanup();
 
             if (exotel.readyState === WebSocket.OPEN) {
@@ -368,13 +546,11 @@ export function registerExotelMedia(server) {
         case "media": {
           if (!message.media?.payload || !inputRate) break;
 
-          // Exotel sends Base64-transported audio.
-          // This assumes the decoded payload is raw signed 16-bit PCM.
+          // Assumes Base64 decodes to raw signed 16-bit little-endian PCM.
           const pcm = Buffer.from(message.media.payload, "base64");
 
           if (pcm.length === 0) break;
 
-          // Convert incoming audio to Gemini's expected 16 kHz PCM.
           const geminiPcm = resamplePcm16(pcm, inputRate, GEMINI_INPUT_RATE);
 
           sendAudioToGemini(geminiPcm);
@@ -391,7 +567,7 @@ export function registerExotelMedia(server) {
         }
 
         case "stop": {
-          console.log("Exotel stream stopped");
+          console.log("Exotel stream stopped", { callSid });
           cleanup();
           break;
         }
@@ -403,7 +579,7 @@ export function registerExotelMedia(server) {
     });
 
     exotel.on("close", () => {
-      console.log("Exotel WebSocket closed");
+      console.log("Exotel WebSocket closed", { callSid });
       cleanup();
     });
 
