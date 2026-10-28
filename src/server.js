@@ -4,7 +4,6 @@ import express from "express";
 import { createServer } from "node:http";
 
 import callsRouter from "./routes/outboundCalls.js";
-
 import { registerExotelMedia } from "./telephony/exotelMedia.js";
 
 const PORT = Number(process.env.PORT || 3001);
@@ -23,7 +22,10 @@ app.get("/health", (_req, res) => {
       process.env.EXOTEL_ACCOUNT_SID &&
       process.env.EXOTEL_API_KEY &&
       process.env.EXOTEL_API_TOKEN &&
-      process.env.EXOTEL_CALLER_ID
+      process.env.EXOTEL_CALLER_ID &&
+      process.env.EXOTEL_API_BASE_URL &&
+      process.env.PUBLIC_WSS_URL &&
+      process.env.TEST_PHONE_NUMBER,
     ),
   });
 });

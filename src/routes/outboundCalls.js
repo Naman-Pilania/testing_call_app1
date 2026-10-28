@@ -16,23 +16,27 @@ router.post("/api/calls", async (req, res) => {
   try {
     const { to } = req.body ?? {};
 
+    // Indian mobile number in +91XXXXXXXXXX format.
     if (typeof to !== "string" || !/^\+91\d{10}$/.test(to)) {
       return res.status(400).json({
         error: "Use an Indian mobile number in +91XXXXXXXXXX format",
       });
     }
 
-    // Initial prototype: only allow your own number.
-    if (to !== process.env.TEST_PHONE_NUMBER) {
+    // Restrict the prototype to the configured test number.
+    const testPhoneNumber = requiredEnv("TEST_PHONE_NUMBER");
+
+    if (to !== testPhoneNumber) {
       return res.status(403).json({
         error: "Only the configured test number is allowed",
       });
     }
 
-    const sid = requiredEnv("EXOTEL_ACCOUNT_SID");
+    const accountSid = requiredEnv("EXOTEL_ACCOUNT_SID");
     const apiKey = requiredEnv("EXOTEL_API_KEY");
     const apiToken = requiredEnv("EXOTEL_API_TOKEN");
     const callerId = requiredEnv("EXOTEL_CALLER_ID");
+
     const baseUrl = requiredEnv("EXOTEL_API_BASE_URL").replace(/\/+$/, "");
     const streamUrl = requiredEnv("PUBLIC_WSS_URL");
 
@@ -42,16 +46,17 @@ router.post("/api/calls", async (req, res) => {
       });
     }
 
-    const endpoint = `${baseUrl}/v1/Accounts/${encodeURIComponent(sid)}/Calls/connect`;
+    const endpoint = `${baseUrl}/v1/Accounts/${encodeURIComponent(accountSid)}/Calls/connect`;
 
-    const form = new FormData();
-
-    form.set("From", to);
-    form.set("CallerId", callerId);
-    form.set("StreamUrl", streamUrl);
-    form.set("StreamType", "bidirectional");
-    form.set("TimeLimit", "300");
-    form.set("CustomField", "gemini-prototype");
+    // Exotel Connect Voice AI request.
+    const form = new URLSearchParams({
+      From: to,
+      CallerId: callerId,
+      StreamUrl: streamUrl,
+      StreamType: "bidirectional",
+      TimeLimit: "300",
+      CustomField: "gemini-prototype",
+    });
 
     const auth = Buffer.from(`${apiKey}:${apiToken}`).toString("base64");
 
@@ -59,6 +64,7 @@ router.post("/api/calls", async (req, res) => {
       method: "POST",
       headers: {
         Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
       },
       body: form,
       signal: AbortSignal.timeout(20000),
@@ -66,15 +72,8 @@ router.post("/api/calls", async (req, res) => {
 
     const raw = await response.text();
 
-    let data;
-
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      data = null;
-    }
-
     if (!response.ok) {
+      // Avoid logging credentials or the full request.
       console.error("Exotel rejected call request", {
         status: response.status,
         response: raw.slice(0, 1000),
@@ -86,24 +85,38 @@ router.post("/api/calls", async (req, res) => {
       });
     }
 
-    if (!data?.Call) {
-      console.error("Unexpected Exotel response", raw.slice(0, 1000));
+    // Exotel may return XML instead of JSON.
+    const callSid = raw.match(/<Sid>([^<]*)<\/Sid>/)?.[1];
+    const status = raw.match(/<Status>([^<]*)<\/Status>/)?.[1];
+    const from = raw.match(/<From>([^<]*)<\/From>/)?.[1];
+
+    if (!callSid) {
+      console.error("Could not parse Exotel call response", {
+        response: raw.slice(0, 1000),
+      });
 
       return res.status(502).json({
-        error: "Exotel returned an unexpected response",
+        error: "Could not parse Exotel call response",
       });
     }
 
     return res.status(202).json({
       accepted: true,
       call: {
-        sid: data.Call.Sid,
-        status: data.Call.Status,
-        from: data.Call.From,
+        sid: callSid,
+        status: status || "accepted",
+        from: from || null,
       },
     });
   } catch (error) {
     console.error("Failed to initiate call:", error.message);
+
+    if (error.name === "TimeoutError" || error.name === "AbortError") {
+      return res.status(504).json({
+        error:
+          "Exotel call request timed out; verify call status before retrying",
+      });
+    }
 
     return res.status(500).json({
       error: "Unable to initiate the call",

@@ -22,7 +22,9 @@ export function resamplePcm16(input, inputRate, outputRate) {
 
   for (let i = 0; i < outputSamples; i++) {
     const sourcePosition = (i * inputRate) / outputRate;
+
     const left = Math.min(Math.floor(sourcePosition), inputSamples - 1);
+
     const right = Math.min(left + 1, inputSamples - 1);
     const fraction = sourcePosition - left;
 

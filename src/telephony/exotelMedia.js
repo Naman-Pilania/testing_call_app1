@@ -1,4 +1,5 @@
 import { WebSocket, WebSocketServer } from "ws";
+
 import { resamplePcm16 } from "../audio/pcm.js";
 
 const GEMINI_MODEL =
@@ -22,8 +23,12 @@ const EXOTEL_RATE = 16000;
 const GEMINI_INPUT_RATE = 16000;
 const GEMINI_OUTPUT_RATE = 24000;
 
-// Exotel requires outbound PCM payload sizes to be multiples of 320 bytes.
-const EXOTEL_FRAME_BYTES = 320;
+// Exotel outbound audio frames: 3200 bytes = 100 ms
+// for 16 kHz, signed 16-bit, mono PCM.
+const EXOTEL_FRAME_BYTES = 3200;
+
+const SUPPORTED_RATES = [8000, 16000, 24000];
+const SUPPORTED_ENCODINGS = ["audio/x-raw", "base64"];
 
 export function registerExotelMedia(server) {
   const wss = new WebSocketServer({
@@ -73,11 +78,14 @@ export function registerExotelMedia(server) {
     }
 
     function sendAudioToGemini(pcm) {
+      if (closed || !pcm?.length) return;
+
       if (!setupComplete) {
         // Bound the queue so a slow upstream cannot exhaust memory.
         if (inputQueue.length < 100) {
           inputQueue.push(pcm);
         }
+
         return;
       }
 
@@ -85,30 +93,41 @@ export function registerExotelMedia(server) {
         realtimeInput: {
           audio: {
             data: pcm.toString("base64"),
-            mimeType: `audio/pcm;rate=${inputRate}`,
+            mimeType: `audio/pcm;rate=${GEMINI_INPUT_RATE}`,
           },
         },
       });
     }
 
-    function sendAudioToCaller(base64Audio) {
-      if (!streamSid || closed) return;
+    function flushAudioToCaller(padFinalFrame = false) {
+      if (closed || !streamSid) return;
 
-      const geminiPcm = Buffer.from(base64Audio, "base64");
-
-      // Gemini produces signed 16-bit little-endian PCM at 24 kHz.
-      const exotelPcm = resamplePcm16(
-        geminiPcm,
-        GEMINI_OUTPUT_RATE,
-        EXOTEL_RATE,
-      );
-
-      outputBuffer = Buffer.concat([outputBuffer, exotelPcm]);
-
-      // Send complete 320-byte frames.
       while (outputBuffer.length >= EXOTEL_FRAME_BYTES) {
         const frame = outputBuffer.subarray(0, EXOTEL_FRAME_BYTES);
+
         outputBuffer = outputBuffer.subarray(EXOTEL_FRAME_BYTES);
+
+        sendExotel({
+          event: "media",
+          stream_sid: streamSid,
+          media: {
+            payload: frame.toString("base64"),
+          },
+        });
+      }
+
+      // A final short audio fragment must not remain stuck in the buffer.
+      // Pad the final frame with silence so it meets the minimum frame size.
+      if (padFinalFrame && outputBuffer.length > 0) {
+        const requiredLength = Math.max(
+          EXOTEL_FRAME_BYTES,
+          Math.ceil(outputBuffer.length / 320) * 320,
+        );
+
+        const frame = Buffer.alloc(requiredLength);
+        outputBuffer.copy(frame);
+
+        outputBuffer = Buffer.alloc(0);
 
         sendExotel({
           event: "media",
@@ -120,8 +139,27 @@ export function registerExotelMedia(server) {
       }
     }
 
+    function sendAudioToCaller(base64Audio) {
+      if (closed || !streamSid) return;
+
+      const geminiPcm = Buffer.from(base64Audio, "base64");
+
+      if (geminiPcm.length === 0) return;
+
+      // Gemini audio is expected to be signed 16-bit little-endian PCM.
+      const exotelPcm = resamplePcm16(
+        geminiPcm,
+        GEMINI_OUTPUT_RATE,
+        EXOTEL_RATE,
+      );
+
+      outputBuffer = Buffer.concat([outputBuffer, exotelPcm]);
+
+      flushAudioToCaller();
+    }
+
     function connectGemini() {
-      if (gemini) return;
+      if (gemini || closed) return;
 
       const key = process.env.GEMINI_API_KEY;
 
@@ -181,17 +219,25 @@ export function registerExotelMedia(server) {
         if (message.error) {
           console.error("Gemini API error:", message.error);
           cleanup();
-          exotel.close();
+
+          if (exotel.readyState === WebSocket.OPEN) {
+            exotel.close();
+          }
+
           return;
         }
 
         if (message.setupComplete) {
           setupComplete = true;
 
-          // Start with a short greeting.
+          console.log("Gemini session ready");
+
+          // Request a spoken greeting once the session is ready.
           sendGemini({
             realtimeInput: {
-              text: "The call has just connected. Greet the caller briefly and introduce yourself as an AI assistant.",
+              text:
+                "The call has just connected. Greet the caller briefly " +
+                "and introduce yourself as an AI assistant.",
             },
           });
 
@@ -200,14 +246,13 @@ export function registerExotelMedia(server) {
           }
 
           inputQueue = [];
-          console.log("Gemini session ready");
           return;
         }
 
         const content = message.serverContent;
 
         if (content?.interrupted) {
-          // Stop any queued Exotel playback when the caller interrupts.
+          // Clear queued playback when the caller interrupts.
           sendExotel({
             event: "clear",
             stream_sid: streamSid,
@@ -230,7 +275,10 @@ export function registerExotelMedia(server) {
           }
         }
 
-        // Function calls can be handled here when you add tools.
+        if (content?.turnComplete) {
+          flushAudioToCaller(true);
+        }
+
         if (message.toolCall?.functionCalls?.length) {
           console.log("Gemini requested a function call");
         }
@@ -238,8 +286,12 @@ export function registerExotelMedia(server) {
 
       gemini.on("error", (error) => {
         console.error("Gemini WebSocket error:", error.message);
+
         cleanup();
-        exotel.close();
+
+        if (exotel.readyState === WebSocket.OPEN) {
+          exotel.close();
+        }
       });
 
       gemini.on("close", (code) => {
@@ -260,34 +312,54 @@ export function registerExotelMedia(server) {
       }
 
       switch (message.event) {
-        case "connected":
+        case "connected": {
           console.log("Exotel WebSocket connected");
           break;
+        }
 
         case "start": {
           const start = message.start ?? {};
 
-          streamSid = start.stream_sid || message.stream_sid;
+          streamSid =
+            start.stream_sid || start.streamSid || message.stream_sid || null;
 
-          const format = start.media_format ?? {};
-          inputRate = Number(format.sample_rate);
+          // Accommodate both spellings seen in stream implementations.
+          const format =
+            start.media_format ??
+            start.mediaFormat ??
+            message.media_format ??
+            {};
+
+          inputRate = Number(
+            format.sample_rate ?? format.sampleRate ?? EXOTEL_RATE,
+          );
 
           console.log("Exotel call started", {
             streamSid,
-            callSid: start.call_sid,
+            callSid: start.call_sid ?? start.callSid,
             mediaFormat: format,
           });
 
           if (
-            format.encoding !== "audio/x-raw" ||
-            Number(format.bit_rate) !== 16 ||
-            ![8000, 16000, 24000].includes(inputRate)
+            !SUPPORTED_ENCODINGS.includes(format.encoding) ||
+            !SUPPORTED_RATES.includes(inputRate)
           ) {
             console.error("Unsupported Exotel media format", format);
+
             cleanup();
-            exotel.close();
+
+            if (exotel.readyState === WebSocket.OPEN) {
+              exotel.close(1011, "Unsupported audio format");
+            }
+
             return;
           }
+
+          console.log("Accepted Exotel PCM stream", {
+            encoding: format.encoding,
+            sampleRate: inputRate,
+            bitRate: format.bit_rate ?? format.bitRate ?? null,
+          });
 
           connectGemini();
           break;
@@ -296,30 +368,37 @@ export function registerExotelMedia(server) {
         case "media": {
           if (!message.media?.payload || !inputRate) break;
 
+          // Exotel sends Base64-transported audio.
+          // This assumes the decoded payload is raw signed 16-bit PCM.
           const pcm = Buffer.from(message.media.payload, "base64");
 
-          // Gemini natively accepts 16 kHz PCM. Resample incoming
-          // Exotel audio if the provider returns another supported rate.
+          if (pcm.length === 0) break;
+
+          // Convert incoming audio to Gemini's expected 16 kHz PCM.
           const geminiPcm = resamplePcm16(pcm, inputRate, GEMINI_INPUT_RATE);
 
           sendAudioToGemini(geminiPcm);
           break;
         }
 
-        case "dtmf":
+        case "dtmf": {
           console.log("Caller pressed a key:", message.dtmf?.digit);
           break;
+        }
 
-        case "mark":
+        case "mark": {
           break;
+        }
 
-        case "stop":
+        case "stop": {
           console.log("Exotel stream stopped");
           cleanup();
           break;
+        }
 
-        default:
+        default: {
           console.log("Unhandled Exotel event:", message.event);
+        }
       }
     });
 
