@@ -436,6 +436,7 @@ export function registerExotelMedia(server) {
 
       // Step 2: Build dynamic system prompt with complete context
       const dynamicPrompt = buildSystemPrompt(activeContext) + END_RULES;
+      console.log("🚀 ~ connectGemini ~ dynamicPrompt:", dynamicPrompt)
 
       const url = new URL(
         "wss://generativelanguage.googleapis.com/ws/" +
