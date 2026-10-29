@@ -4,6 +4,13 @@ import {
   getAvailableSlots,
   getDb,
   clearDb,
+  getAllPatients,
+  getPatientById,
+  getAllDoctors,
+  getAllCallLogs,
+  getCallLogBySid,
+  bookAppointment,
+  createPatient,
 } from "../db/database.js";
 
 const router = Router();
@@ -26,13 +33,147 @@ router.get("/api/context", (req, res) => {
   try {
     const phone = req.query.phone || process.env.TEST_PHONE_NUMBER;
     const patientId = req.query.patientId;
-    
-    console.log("🚀 ~ phone:", phone)
 
     const context = lookupPatientContext({ phone, patientId });
     return res.json({ ok: true, context });
   } catch (error) {
     console.error("Failed to query context:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/patients
+ * Returns all stored patients with active clinical contexts and counts.
+ */
+router.get("/api/patients", (_req, res) => {
+  try {
+    const patients = getAllPatients();
+    return res.json({ ok: true, count: patients.length, patients });
+  } catch (error) {
+    console.error("Failed to query patients:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/patients/:id
+ * Returns a specific patient profile by ID.
+ */
+router.get("/api/patients/:id", (req, res) => {
+  try {
+    const patient = getPatientById(req.params.id);
+    if (!patient) {
+      return res.status(404).json({ error: "Patient not found" });
+    }
+    return res.json({ ok: true, patient });
+  } catch (error) {
+    console.error("Failed to query patient:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/patients
+ * Creates a new patient with their clinical context and follow-up summary.
+ */
+router.post("/api/patients", (req, res) => {
+  try {
+    const {
+      fullName,
+      preferredName,
+      phone,
+      age,
+      gender,
+      assignedDoctorId,
+      medicalAlerts,
+      insurancePlan,
+      preferredTimeOfDay,
+      generalNotes,
+      activeContext,
+    } = req.body ?? {};
+
+    if (!fullName) {
+      return res.status(400).json({
+        error: "fullName is a required field",
+      });
+    }
+
+    const defaultPhone = process.env.TEST_PHONE_NUMBER || "+918218627040";
+    const targetPhone = phone || defaultPhone;
+
+    if (!/^\+91\d{10}$/.test(String(targetPhone))) {
+      return res.status(400).json({
+        error: "Use an Indian mobile number in +91XXXXXXXXXX format",
+      });
+    }
+
+    const newPatient = createPatient({
+      fullName,
+      preferredName,
+      phone: targetPhone,
+      age,
+      gender,
+      assignedDoctorId,
+      medicalAlerts,
+      insurancePlan,
+      preferredTimeOfDay,
+      generalNotes,
+      activeContext,
+    });
+
+    return res.status(201).json({
+      ok: true,
+      message: "Patient and active clinical context created successfully",
+      patient: newPatient,
+    });
+  } catch (error) {
+    console.error("Failed to create patient:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/doctors
+ * Returns all clinic doctors with availability and statistics.
+ */
+router.get("/api/doctors", (_req, res) => {
+  try {
+    const doctors = getAllDoctors();
+    return res.json({ ok: true, count: doctors.length, doctors });
+  } catch (error) {
+    console.error("Failed to query doctors:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/calls
+ * Returns all past call logs with transcript summaries and outcomes.
+ */
+router.get("/api/calls", (_req, res) => {
+  try {
+    const calls = getAllCallLogs();
+    return res.json({ ok: true, count: calls.length, calls });
+  } catch (error) {
+    console.error("Failed to query call logs:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/calls/:callSid
+ * Returns a specific call log by SID.
+ */
+router.get("/api/calls/:callSid", (req, res) => {
+  try {
+    const call = getCallLogBySid(req.params.callSid);
+    if (!call) {
+      return res.status(404).json({ error: "Call log not found" });
+    }
+    return res.json({ ok: true, call });
+  } catch (error) {
+    console.error("Failed to query call log:", error.message);
     return res.status(500).json({ error: error.message });
   }
 });
@@ -76,6 +217,36 @@ router.get("/api/appointments", (_req, res) => {
 });
 
 /**
+ * POST /api/appointments
+ * Manually schedules an appointment.
+ */
+router.post("/api/appointments", (req, res) => {
+  try {
+    const { patientId, doctorId, date, time, treatmentType, notes } =
+      req.body ?? {};
+    if (!patientId || !date || !time) {
+      return res
+        .status(400)
+        .json({ error: "patientId, date, and time are required" });
+    }
+
+    const result = bookAppointment({
+      patientId,
+      doctorId,
+      date,
+      time,
+      treatmentType,
+      notes,
+    });
+
+    return res.status(201).json({ ok: true, appointment: result });
+  } catch (error) {
+    console.error("Failed to book appointment:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * POST /api/db/clear or POST /api/db/reset
  * Clears all database tables and reseeds them for debugging and fresh testing.
  */
@@ -99,28 +270,33 @@ router.post(["/api/db/clear", "/api/db/reset"], (_req, res) => {
  */
 router.post("/api/calls", async (req, res) => {
   try {
-    const { to, patientId } = req.body ?? {};
+    const { to, patientId, forceTestPhone } = req.body ?? {};
+
+    const testPhoneNumber = requiredEnv("TEST_PHONE_NUMBER");
+    const targetNumber = to || testPhoneNumber;
 
     // Indian mobile number in +91XXXXXXXXXX format.
-    if (typeof to !== "string" || !/^\+91\d{10}$/.test(to)) {
+    if (typeof targetNumber !== "string" || !/^\+91\d{10}$/.test(targetNumber)) {
       return res.status(400).json({
         error: "Use an Indian mobile number in +91XXXXXXXXXX format",
       });
     }
 
-    // Restrict the prototype to the configured test number.
-    const testPhoneNumber = requiredEnv("TEST_PHONE_NUMBER");
+    // Dial number: if forceTestPhone is true or in prototype mode, ensure dial destination is testPhoneNumber
+    const dialNumber = forceTestPhone ? testPhoneNumber : targetNumber;
 
-    if (to !== testPhoneNumber) {
+    if (dialNumber !== testPhoneNumber) {
       return res.status(403).json({
-        error: "Only the configured test number is allowed",
+        error: `Only the configured test number (${testPhoneNumber}) is allowed in testing mode. Check 'Forward call to verified Prototype Number' to test this patient on your phone.`,
       });
     }
 
-    // Step 1: Active Database Context Lookup
-    const activeContext = lookupPatientContext({ phone: to, patientId });
-    console.log("Looked up active context for call:", {
-      phone: to,
+    // Step 1: Active Database Context Lookup (prioritizes patientId, falls back to targetNumber)
+    const activeContext = lookupPatientContext({ phone: targetNumber, patientId });
+    console.log("Looked up active context for outbound call:", {
+      phone: targetNumber,
+      dialedTo: dialNumber,
+      patientId: activeContext.patient.patientId,
       patientName: activeContext.patient.fullName,
       callGoal: activeContext.activeContext.callGoal,
       pendingAction: activeContext.activeContext.pendingAction,
@@ -143,7 +319,7 @@ router.post("/api/calls", async (req, res) => {
     // Attach active lookup identity into the stream URL so WebSocket server
     // immediately receives the exact phone number and patientId on connect.
     const parsedStreamUrl = new URL(streamUrl);
-    parsedStreamUrl.searchParams.set("phone", to);
+    parsedStreamUrl.searchParams.set("phone", dialNumber);
     if (activeContext.patient?.patientId) {
       parsedStreamUrl.searchParams.set(
         "patientId",
@@ -156,7 +332,7 @@ router.post("/api/calls", async (req, res) => {
 
     // Exotel Connect Voice AI request.
     const form = new URLSearchParams({
-      From: to,
+      From: dialNumber,
       CallerId: callerId,
       StreamUrl: finalStreamUrl,
       StreamType: "bidirectional",
