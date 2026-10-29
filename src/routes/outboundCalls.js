@@ -26,6 +26,8 @@ router.get("/api/context", (req, res) => {
   try {
     const phone = req.query.phone || process.env.TEST_PHONE_NUMBER;
     const patientId = req.query.patientId;
+    
+    console.log("🚀 ~ phone:", phone)
 
     const context = lookupPatientContext({ phone, patientId });
     return res.json({ ok: true, context });

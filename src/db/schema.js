@@ -50,7 +50,7 @@ export const REQUIRED_LAST_VISIT_FIELDS = Object.freeze([
 export const SQL_SCHEMA = `
   CREATE TABLE IF NOT EXISTS patients (
     patient_id TEXT PRIMARY KEY,
-    phone TEXT UNIQUE NOT NULL,
+    phone TEXT NOT NULL,
     full_name TEXT NOT NULL,
     preferred_name TEXT NOT NULL,
     age INTEGER,

@@ -37,7 +37,7 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
   const patients = [
     {
       patient_id: "PAT-1042",
-      phone: "+918283828192",
+      phone: testPhone,
       full_name: "Surender Kumar",
       preferred_name: "Surender",
       age: 34,
@@ -55,7 +55,7 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
     },
     {
       patient_id: "PAT-1088",
-      phone: "+919876543210",
+      phone: testPhone,
       full_name: "Priya Sharma",
       preferred_name: "Priya",
       age: 28,
@@ -211,5 +211,64 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
     },
   ];
 
-  return { doctors, patients, activeContexts, appointmentSlots };
+  const callLogs = [
+    {
+      call_sid: "EXO-CALL-882194",
+      phone: testPhone,
+      patient_id: "PAT-1042",
+      call_reason: "Post-root-canal recovery check & scheduling permanent crown fitting",
+      started_at: "2026-10-27 11:15:00",
+      ended_at: "2026-10-27 11:18:42",
+      outcome: "APPOINTMENT_SCHEDULED",
+      notes: "Patient reported slight tenderness in tooth #14 which subsided after 48h. Successfully booked permanent crown fitting for tomorrow at 10:00 AM with Dr. Sneha Rao.",
+      transcript_summary: `[00:02] Maya (AI): Hello! Am I speaking with Surender?
+[00:05] Patient: Yes, this is Surender speaking. Who's calling?
+[00:08] Maya (AI): Hi Surender! This is Maya calling from Brightside Dental Clinic on behalf of Dr. Sneha Rao. I'm following up on your recent root canal on tooth number 14. How has that area been feeling?
+[00:18] Patient: Oh hi Maya! It was a bit sore the first couple days, but honestly it feels pretty normal now.
+[00:24] Maya (AI): That's wonderful to hear! Dr. Rao noted that while your temporary filling is intact, we need to place your permanent zirconia crown soon so the tooth stays strong and protected. Dr. Rao has an opening tomorrow morning at 10:00 AM or 11:30 AM. Would either of those suit you?
+[00:41] Patient: Tomorrow at 10:00 AM works great for me.
+[00:45] Maya (AI): Perfect! I've reserved tomorrow, 10:00 AM with Dr. Sneha Rao for your crown fitting. You'll receive a confirmation SMS shortly. Take care, Surender!
+[00:54] Patient: Thanks Maya, bye!
+[00:56] Maya (AI): Goodbye!`,
+    },
+    {
+      call_sid: "EXO-CALL-882195",
+      phone: testPhone,
+      patient_id: "PAT-1088",
+      call_reason: "Semi-annual routine dental exam and prophylaxis cleaning overdue by 3 weeks",
+      started_at: "2026-10-26 15:30:00",
+      ended_at: "2026-10-26 15:33:10",
+      outcome: "FOLLOW_UP_REQUIRED",
+      notes: "Priya mentioned sensitive gums recently. Inquired about afternoon slots with Dr. Vikram Mehta. Requested a callback later in the week due to work travel.",
+      transcript_summary: `[00:02] Maya (AI): Hello, could I speak with Priya please?
+[00:05] Patient: Speaking, who is this?
+[00:07] Maya (AI): Good afternoon Priya! This is Maya from Brightside Dental Clinic. I noticed you're due for your 6-month routine cleaning and checkup with Dr. Vikram Mehta.
+[00:16] Patient: Oh yes, I know I'm late! My gums have actually been feeling a bit sensitive lately.
+[00:22] Maya (AI): I'm sorry to hear about the sensitivity. That's definitely something Dr. Mehta will examine closely. We have an opening with Dr. Mehta tomorrow at 2:00 PM or 4:30 PM.
+[00:33] Patient: I'm currently traveling for work until Friday. Could you follow up with me this weekend?
+[00:39] Maya (AI): Absolutely, Priya. I've noted that for our team to follow up on Saturday. If the sensitivity worsens before then, please give us a call. Have a safe trip!
+[00:48] Patient: Thank you so much, Maya.`,
+    },
+    {
+      call_sid: "EXO-CALL-882196",
+      phone: testPhone,
+      patient_id: "PAT-2002",
+      call_reason: "Post-root-canal recovery check & scheduling permanent crown fitting",
+      started_at: "2026-10-28 10:00:00",
+      ended_at: "2026-10-28 10:03:15",
+      outcome: "COMPLETED",
+      notes: "Discussed crown options with patient. Confirmed patient has no pain. Offered slots with Dr. Sneha Rao.",
+      transcript_summary: `[00:02] Maya (AI): Hi Naman! This is Maya calling from Brightside Dental Clinic. How are you doing today?
+[00:06] Patient: Hey Maya, doing well, thanks.
+[00:09] Maya (AI): Glad to hear that! I'm checking in following your root canal therapy with Dr. Sneha Rao. How has your tooth been feeling? Any discomfort with hot or cold?
+[00:19] Patient: No discomfort at all, everything healed up nicely.
+[00:23] Maya (AI): That's fantastic news. The next step is placing your permanent crown to keep the tooth intact. Would you like to review available appointment times?
+[00:32] Patient: Yes please, what times do you have open?
+[00:35] Maya (AI): Dr. Rao has open slots tomorrow at 10:00 AM, 11:30 AM, or 3:00 PM.
+[00:41] Patient: Let me check my calendar and I will call back to lock it in.
+[00:45] Maya (AI): Sounds great, Naman. We're here whenever you're ready. Have a wonderful day!`,
+    },
+  ];
+
+  return { doctors, patients, activeContexts, appointmentSlots, callLogs };
 }

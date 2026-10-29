@@ -90,6 +90,12 @@ export function seedDatabase(db = getRawDb()) {
     "INSERT INTO appointment_slots (slot_id, doctor_id, date, time, is_available) VALUES (?, ?, ?, ?, ?)",
   );
 
+  const insertCallLog = db.prepare(`
+    INSERT INTO call_logs (
+      call_sid, phone, patient_id, call_reason, started_at, ended_at, outcome, notes, transcript_summary
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
   const seedTx = db.transaction(() => {
     for (const d of doctors) {
       insertDoctor.run(d.doctor_id, d.name, d.specialty, d.available_days);
@@ -128,6 +134,21 @@ export function seedDatabase(db = getRawDb()) {
     for (const s of appointmentSlots) {
       insertSlot.run(s.slot_id, s.doctor_id, s.date, s.time, s.is_available);
     }
+    if (Array.isArray(getSeedData().callLogs)) {
+      for (const log of getSeedData().callLogs) {
+        insertCallLog.run(
+          log.call_sid,
+          log.phone,
+          log.patient_id,
+          log.call_reason,
+          log.started_at,
+          log.ended_at,
+          log.outcome,
+          log.notes,
+          log.transcript_summary,
+        );
+      }
+    }
   });
 
   seedTx();
@@ -138,6 +159,7 @@ export function seedDatabase(db = getRawDb()) {
     patientsCount: patients.length,
     contextsCount: activeContexts.length,
     slotsCount: appointmentSlots.length,
+    callLogsCount: getSeedData().callLogs?.length || 0,
   };
 }
 
@@ -226,16 +248,17 @@ export function lookupPatientContext({ phone, patientId } = {}) {
 
   let patientRow = null;
 
-  if (phone) {
-    patientRow = db
-      .prepare("SELECT * FROM patients WHERE phone = ?")
-      .get(phone);
-  }
-
-  if (!patientRow && patientId) {
+  // Check patientId first to allow distinct lookups when multiple patients share a test phone
+  if (patientId) {
     patientRow = db
       .prepare("SELECT * FROM patients WHERE patient_id = ?")
       .get(patientId);
+  }
+
+  if (!patientRow && phone) {
+    patientRow = db
+      .prepare("SELECT * FROM patients WHERE phone = ?")
+      .get(phone);
   }
 
   // If patient found in database
@@ -503,4 +526,260 @@ export function saveCallLog({
     notes,
     transcriptSummary,
   );
+}
+
+/**
+ * Returns all stored patients with their assigned doctor and active clinical context.
+ */
+export function getAllPatients() {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT
+      p.*,
+      d.name AS assigned_doctor_name,
+      d.specialty AS assigned_doctor_specialty,
+      ac.context_id,
+      ac.call_goal,
+      ac.call_reason,
+      ac.last_visit_date,
+      ac.last_visit_procedure,
+      ac.last_visit_doctor,
+      ac.last_visit_outcome,
+      ac.pending_action,
+      ac.recommended_duration_minutes,
+      ac.urgency,
+      ac.is_active AS context_is_active,
+      (SELECT COUNT(*) FROM appointments a WHERE a.patient_id = p.patient_id) AS appointments_count,
+      (SELECT COUNT(*) FROM call_logs cl WHERE cl.patient_id = p.patient_id OR cl.phone = p.phone) AS calls_count
+    FROM patients p
+    LEFT JOIN doctors d ON p.assigned_doctor_id = d.doctor_id
+    LEFT JOIN active_contexts ac ON ac.patient_id = p.patient_id AND ac.is_active = 1
+    ORDER BY p.patient_id ASC
+  `).all();
+
+  return rows.map((r) => {
+    let medicalAlerts = [];
+    try {
+      medicalAlerts = JSON.parse(r.medical_alerts || "[]");
+    } catch {
+      medicalAlerts = [];
+    }
+
+    return {
+      patientId: r.patient_id,
+      phone: r.phone,
+      fullName: r.full_name,
+      preferredName: r.preferred_name,
+      age: r.age,
+      gender: r.gender,
+      assignedDoctorId: r.assigned_doctor_id,
+      assignedDoctorName: r.assigned_doctor_name || "Unassigned",
+      assignedDoctorSpecialty: r.assigned_doctor_specialty || "",
+      medicalAlerts,
+      insurancePlan: r.insurance_plan || "Standard Coverage",
+      preferredTimeOfDay: r.preferred_time_of_day || "Morning",
+      generalNotes: r.general_notes || "",
+      createdAt: r.created_at,
+      appointmentsCount: r.appointments_count || 0,
+      callsCount: r.calls_count || 0,
+      activeContext: r.context_id ? {
+        contextId: r.context_id,
+        callGoal: r.call_goal,
+        callReason: r.call_reason,
+        lastVisitDate: r.last_visit_date,
+        lastVisitProcedure: r.last_visit_procedure,
+        lastVisitDoctor: r.last_visit_doctor,
+        lastVisitOutcome: r.last_visit_outcome,
+        pendingAction: r.pending_action,
+        recommendedDurationMinutes: r.recommended_duration_minutes,
+        urgency: r.urgency,
+        isActive: Boolean(r.context_is_active),
+      } : null,
+    };
+  });
+}
+
+/**
+ * Retrieves a single patient by ID.
+ */
+export function getPatientById(patientId) {
+  const all = getAllPatients();
+  return all.find((p) => p.patientId === patientId) || null;
+}
+
+/**
+ * Returns all doctors with available slot and appointment counts.
+ */
+export function getAllDoctors() {
+  const db = getDb();
+  return db.prepare(`
+    SELECT
+      d.*,
+      (SELECT COUNT(*) FROM appointment_slots s WHERE s.doctor_id = d.doctor_id AND s.is_available = 1) AS available_slots_count,
+      (SELECT COUNT(*) FROM appointments a WHERE a.doctor_id = d.doctor_id) AS booked_appointments_count
+    FROM doctors d
+    ORDER BY d.name ASC
+  `).all().map((d) => ({
+    doctorId: d.doctor_id,
+    name: d.name,
+    specialty: d.specialty,
+    availableDays: d.available_days,
+    availableSlotsCount: d.available_slots_count || 0,
+    bookedAppointmentsCount: d.booked_appointments_count || 0,
+  }));
+}
+
+/**
+ * Returns all logged calls with patient identity and outcome details.
+ */
+export function getAllCallLogs() {
+  const db = getDb();
+  return db.prepare(`
+    SELECT
+      c.*,
+      p.full_name AS patient_name,
+      p.preferred_name AS patient_preferred_name
+    FROM call_logs c
+    LEFT JOIN patients p ON c.patient_id = p.patient_id OR c.phone = p.phone
+    ORDER BY c.started_at DESC
+  `).all().map((c) => ({
+    callSid: c.call_sid,
+    phone: c.phone,
+    patientId: c.patient_id,
+    patientName: c.patient_name || "Unknown Caller",
+    patientPreferredName: c.patient_preferred_name || "Caller",
+    callReason: c.call_reason || "Outbound Follow-up",
+    startedAt: c.started_at,
+    endedAt: c.ended_at,
+    outcome: c.outcome || "COMPLETED",
+    notes: c.notes || "",
+    transcriptSummary: c.transcript_summary || "",
+  }));
+}
+
+/**
+ * Retrieves detailed call record by Call SID.
+ */
+export function getCallLogBySid(callSid) {
+  const db = getDb();
+  const c = db.prepare(`
+    SELECT
+      c.*,
+      p.full_name AS patient_name,
+      p.preferred_name AS patient_preferred_name,
+      p.assigned_doctor_id,
+      d.name AS doctor_name
+    FROM call_logs c
+    LEFT JOIN patients p ON c.patient_id = p.patient_id OR c.phone = p.phone
+    LEFT JOIN doctors d ON p.assigned_doctor_id = d.doctor_id
+    WHERE c.call_sid = ?
+  `).get(callSid);
+
+  if (!c) return null;
+
+  return {
+    callSid: c.call_sid,
+    phone: c.phone,
+    patientId: c.patient_id,
+    patientName: c.patient_name || "Unknown Caller",
+    patientPreferredName: c.patient_preferred_name || "Caller",
+    doctorName: c.doctor_name || "Dr. Sneha Rao",
+    callReason: c.call_reason || "Outbound Follow-up",
+    startedAt: c.started_at,
+    endedAt: c.ended_at,
+    outcome: c.outcome || "COMPLETED",
+    notes: c.notes || "",
+    transcriptSummary: c.transcript_summary || "",
+  };
+}
+
+/**
+ * Creates and stores a new patient with their active clinical context and follow-up summary.
+ */
+export function createPatient({
+  fullName,
+  preferredName,
+  phone,
+  age = null,
+  gender = null,
+  assignedDoctorId = "DOC-1",
+  medicalAlerts = [],
+  insurancePlan = "Standard Coverage",
+  preferredTimeOfDay = "Morning",
+  generalNotes = "",
+  activeContext = {},
+}) {
+  const db = getDb();
+  const randNum = Math.floor(1000 + Math.random() * 9000);
+  const patientId = `PAT-${randNum}`;
+  const contextId = `CTX-${randNum}`;
+
+  let alertsJson = "[]";
+  if (Array.isArray(medicalAlerts)) {
+    alertsJson = JSON.stringify(medicalAlerts);
+  } else if (typeof medicalAlerts === "string") {
+    alertsJson = JSON.stringify(
+      medicalAlerts
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+  }
+
+  const tx = db.transaction(() => {
+    // 1. Insert patient profile
+    db.prepare(`
+      INSERT INTO patients (
+        patient_id, phone, full_name, preferred_name, age, gender,
+        assigned_doctor_id, medical_alerts, insurance_plan, preferred_time_of_day, general_notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      patientId,
+      String(phone),
+      fullName,
+      preferredName || fullName.split(" ")[0] || fullName,
+      age ? Number(age) : null,
+      gender || null,
+      assignedDoctorId || "DOC-1",
+      alertsJson,
+      insurancePlan || "Standard Coverage",
+      preferredTimeOfDay || "Morning",
+      generalNotes || "",
+    );
+
+    // 2. Insert active clinical context / call summary
+    const callGoal = activeContext.callGoal || "ROUTINE_FOLLOW_UP";
+    const callReason =
+      activeContext.callReason ||
+      "Routine dental checkup and appointment scheduling";
+    const pendingAction =
+      activeContext.pendingAction ||
+      "Check patient status and schedule next consultation slot.";
+
+    db.prepare(`
+      INSERT INTO active_contexts (
+        context_id, patient_id, call_goal, call_reason,
+        last_visit_date, last_visit_procedure, last_visit_doctor, last_visit_outcome,
+        pending_action, recommended_duration_minutes, urgency, is_active
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    `).run(
+      contextId,
+      patientId,
+      callGoal,
+      callReason,
+      activeContext.lastVisitDate || null,
+      activeContext.lastVisitProcedure || null,
+      activeContext.lastVisitDoctor || null,
+      activeContext.lastVisitOutcome || null,
+      pendingAction,
+      activeContext.recommendedDurationMinutes
+        ? Number(activeContext.recommendedDurationMinutes)
+        : 30,
+      activeContext.urgency || "MEDIUM",
+    );
+  });
+
+  tx();
+
+  return getPatientById(patientId);
 }
