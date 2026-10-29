@@ -443,6 +443,81 @@ export function getAvailableSlots({ doctorId, date } = {}) {
 }
 
 /**
+ * Retrieves all slots (both available and booked) with enriched booking & patient details.
+ */
+export function getAllSlotsWithBookingDetails({
+  doctorId,
+  date,
+  status = "ALL",
+} = {}) {
+  const db = getDb();
+  let query = `
+    SELECT
+      s.slot_id AS slotId,
+      s.doctor_id AS doctorId,
+      d.name AS doctorName,
+      d.specialty AS doctorSpecialty,
+      s.date,
+      s.time,
+      s.is_available AS isAvailable,
+      a.appointment_id AS appointmentId,
+      a.patient_id AS patientId,
+      p.full_name AS patientName,
+      p.phone AS patientPhone,
+      a.treatment_type AS treatmentType,
+      a.status AS appointmentStatus,
+      a.notes AS appointmentNotes
+    FROM appointment_slots s
+    LEFT JOIN doctors d ON s.doctor_id = d.doctor_id
+    LEFT JOIN appointments a ON (s.doctor_id = a.doctor_id AND s.date = a.date AND s.time = a.time)
+    LEFT JOIN patients p ON a.patient_id = p.patient_id
+    WHERE 1=1
+  `;
+  const params = [];
+
+  if (doctorId) {
+    query += " AND s.doctor_id = ?";
+    params.push(doctorId);
+  }
+
+  if (date) {
+    query += " AND s.date = ?";
+    params.push(date);
+  }
+
+  if (status === "AVAILABLE") {
+    query += " AND s.is_available = 1";
+  } else if (status === "BOOKED") {
+    query += " AND s.is_available = 0";
+  }
+
+  query += " ORDER BY s.date ASC, s.time ASC LIMIT 50";
+  return db
+    .prepare(query)
+    .all(...params)
+    .map((row) => ({
+      slotId: row.slotId,
+      doctorId: row.doctorId,
+      doctorName: row.doctorName || "Clinic Doctor",
+      doctorSpecialty: row.doctorSpecialty || "",
+      date: row.date,
+      time: row.time,
+      isAvailable: Boolean(row.isAvailable),
+      booking: !row.isAvailable
+        ? {
+            appointmentId: row.appointmentId,
+            patientId: row.patientId,
+            patientName: row.patientName || "Booked Patient",
+            patientPhone: row.patientPhone || "",
+            treatmentType: row.treatmentType || "General Consultation",
+            status: row.appointmentStatus || "SCHEDULED",
+            notes: row.appointmentNotes || "",
+          }
+        : null,
+    }));
+}
+
+/**
  * Books an appointment in the database and marks the slot as booked.
  */
 export function bookAppointment({

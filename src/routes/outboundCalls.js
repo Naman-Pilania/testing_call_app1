@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   lookupPatientContext,
   getAvailableSlots,
+  getAllSlotsWithBookingDetails,
   getDb,
   clearDb,
   getAllPatients,
@@ -181,12 +182,21 @@ router.get("/api/calls/:callSid", (req, res) => {
 
 /**
  * GET /api/slots
- * Returns all currently available appointment slots from the database.
+ * Returns appointment slots with rich availability and booking details.
+ * Supports query params: doctorId, date, status ('ALL', 'AVAILABLE', 'BOOKED'), availableOnly ('true')
  */
 router.get("/api/slots", (req, res) => {
   try {
-    const { doctorId, date } = req.query;
-    const slots = getAvailableSlots({ doctorId, date });
+    const { doctorId, date, status, availableOnly } = req.query;
+    if (availableOnly === "true") {
+      const slots = getAvailableSlots({ doctorId, date });
+      return res.json({ ok: true, count: slots.length, slots });
+    }
+    const slots = getAllSlotsWithBookingDetails({
+      doctorId,
+      date,
+      status: status || "ALL",
+    });
     return res.json({ ok: true, count: slots.length, slots });
   } catch (error) {
     console.error("Failed to fetch slots:", error.message);
