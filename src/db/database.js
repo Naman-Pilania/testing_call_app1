@@ -249,22 +249,36 @@ export function closeDb() {
  * - Assigned Doctor Details
  * - Open Appointment Slots
  */
-export function lookupPatientContext({ phone, patientId } = {}) {
+export function lookupPatientContext({
+  phone,
+  patientId,
+  isNewPatient = false,
+} = {}) {
   const db = getDb();
 
   let patientRow = null;
 
-  // Check patientId first to allow distinct lookups when multiple patients share a test phone
-  if (patientId) {
+  // 1. If explicitly requested as a new patient, skip DB lookup and return new-caller context
+  if (isNewPatient || patientId === "NEW" || patientId === "NEW_PATIENT") {
+    patientRow = null;
+  }
+  // 2. Check patientId first to allow distinct lookups when multiple patients share a test phone
+  else if (patientId && patientId !== "NEW" && !patientId.startsWith("NEW-")) {
     patientRow = db
       .prepare("SELECT * FROM patients WHERE patient_id = ?")
       .get(patientId);
   }
-
-  if (!patientRow && phone) {
-    patientRow = db
-      .prepare("SELECT * FROM patients WHERE phone = ?")
-      .get(phone);
+  // 3. Fall back to phone lookup ONLY if patientId was not provided AND phone is not the shared test prototype phone
+  else if (phone) {
+    const testPhone = process.env.TEST_PHONE_NUMBER || "+918218627040";
+    // In prototype/test mode, all demo patients share the test phone.
+    // If patientId is not specified, treating it as Surender by default is wrong.
+    // Instead, if phone equals the shared test phone and patientId is missing, treat as a New Patient Inquiry.
+    if (phone !== testPhone) {
+      patientRow = db
+        .prepare("SELECT * FROM patients WHERE phone = ?")
+        .get(phone);
+    }
   }
 
   // If patient found in database
@@ -537,9 +551,13 @@ export function getAllSlotsWithBookingDetails({
 
 /**
  * Books an appointment in the database and marks the slot as booked.
+ * If patientId does not exist or is a new caller, automatically creates
+ * a patient record so foreign-key integrity is always guaranteed.
  */
 export function bookAppointment({
   patientId,
+  patientName,
+  phone,
   doctorId,
   department,
   date,
@@ -550,11 +568,59 @@ export function bookAppointment({
   const db = getDb();
   const appointmentId = `APT-${Date.now().toString().slice(-6)}`;
 
+  // Ensure patient exists in the patients table
+  let validPatientId = patientId;
+  let existingPatient = null;
+
+  if (validPatientId && validPatientId !== "NEW" && !validPatientId.startsWith("NEW-")) {
+    existingPatient = db
+      .prepare("SELECT patient_id FROM patients WHERE patient_id = ?")
+      .get(validPatientId);
+  }
+
+  // If patient not found or is a new caller, auto-register them
+  if (!existingPatient) {
+    const defaultTestPhone = process.env.TEST_PHONE_NUMBER || "+918218627040";
+    const assignedPhone = phone || defaultTestPhone;
+    const resolvedName =
+      patientName ||
+      (typeof notes === "string" && notes.match(/patient:?\s*([A-Za-z ]+)/i)?.[1]) ||
+      "New Registered Patient";
+
+    const newPatient = createPatient({
+      fullName: resolvedName.trim(),
+      preferredName: resolvedName.trim().split(" ")[0],
+      phone: assignedPhone,
+      assignedDoctorId: doctorId || "DOC-MED",
+      activeContext: {
+        callGoal: "NEW_PATIENT_APPOINTMENT",
+        callReason: notes || treatmentType || "Direct appointment booking via Maya AI",
+        pendingAction: "Complete clinical intake at hospital reception",
+      },
+    });
+
+    validPatientId = newPatient.patientId;
+    console.log(`[DB] Auto-created patient ${validPatientId} (${newPatient.fullName}) for appointment booking`);
+  }
+
+  let resolvedDoctorId = doctorId;
   let resolvedDepartment = department;
-  if (!resolvedDepartment && doctorId) {
+
+  if (!resolvedDoctorId && resolvedDepartment) {
+    const docInDept = db
+      .prepare("SELECT doctor_id FROM doctors WHERE department = ? LIMIT 1")
+      .get(resolvedDepartment);
+    if (docInDept) resolvedDoctorId = docInDept.doctor_id;
+  }
+
+  if (!resolvedDoctorId) {
+    resolvedDoctorId = "DOC-MED";
+  }
+
+  if (!resolvedDepartment && resolvedDoctorId) {
     const doc = db
       .prepare("SELECT department FROM doctors WHERE doctor_id = ?")
-      .get(doctorId);
+      .get(resolvedDoctorId);
     resolvedDepartment = doc?.department || "General Medicine";
   }
 
@@ -566,12 +632,12 @@ export function bookAppointment({
       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SCHEDULED', ?)
     `).run(
       appointmentId,
-      patientId,
-      doctorId || "DOC-MED",
+      validPatientId,
+      resolvedDoctorId,
       resolvedDepartment || "General Medicine",
       date,
       time,
-      treatmentType || "General Consultation",
+      treatmentType || "Clinical Consultation",
       notes,
     );
 
@@ -580,7 +646,7 @@ export function bookAppointment({
       UPDATE appointment_slots
       SET is_available = 0
       WHERE (doctor_id = ? OR ? IS NULL) AND date = ? AND time = ?
-    `).run(doctorId || null, doctorId || null, date, time);
+    `).run(resolvedDoctorId, resolvedDoctorId, date, time);
   });
 
   tx();
@@ -588,12 +654,12 @@ export function bookAppointment({
   return {
     success: true,
     appointmentId,
-    patientId,
-    doctorId: doctorId || "DOC-MED",
+    patientId: validPatientId,
+    doctorId: resolvedDoctorId,
     department: resolvedDepartment || "General Medicine",
     date,
     time,
-    treatmentType: treatmentType || "General Consultation",
+    treatmentType: treatmentType || "Clinical Consultation",
     status: "SCHEDULED",
   };
 }

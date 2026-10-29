@@ -122,10 +122,14 @@ export function resolveCallContext({
 
   // 5. Fallback to phone number lookup
   const targetPhone = phone || process.env.TEST_PHONE_NUMBER;
+  const isTestPrototypePhone = targetPhone === process.env.TEST_PHONE_NUMBER;
   console.log(
-    `[CallRegistry] Falling back to phone lookup for: ${targetPhone}`,
+    `[CallRegistry] Falling back to phone lookup for: ${targetPhone} (isTestPrototypePhone: ${isTestPrototypePhone})`,
   );
-  return lookupPatientContext({ phone: targetPhone });
+  return lookupPatientContext({
+    phone: targetPhone,
+    isNewPatient: isTestPrototypePhone,
+  });
 }
 
 export function clearCallRegistry() {

@@ -2,9 +2,11 @@ import { WebSocket, WebSocketServer } from "ws";
 
 import { resamplePcm16 } from "../audio/pcm.js";
 import {
+  getDb,
   lookupPatientContext,
   getAvailableSlots,
   bookAppointment,
+  createPatient,
   saveCallLog,
 } from "../db/database.js";
 import {
@@ -548,6 +550,56 @@ export function registerExotelMedia(server) {
                       },
                     },
                     {
+                      name: "register_new_patient",
+                      description:
+                        "Registers a new patient into the hospital database during the phone call. Call this as soon as a new caller provides their full name and medical concern or desired department.",
+                      parameters: {
+                        type: "OBJECT",
+                        properties: {
+                          fullName: {
+                            type: "STRING",
+                            description:
+                              "Full name of the caller/patient (e.g. 'Rahul Sharma', 'Anjali Gupta')",
+                          },
+                          preferredName: {
+                            type: "STRING",
+                            description:
+                              "Preferred first name for address (optional)",
+                          },
+                          phone: {
+                            type: "STRING",
+                            description:
+                              "Patient phone number (optional, defaults to caller phone)",
+                          },
+                          department: {
+                            type: "STRING",
+                            description:
+                              "Target hospital department: Cardiology, Ophthalmology, ENT, Hepatology, Dental, Orthopedics, or General Medicine",
+                          },
+                          reason: {
+                            type: "STRING",
+                            description:
+                              "Medical concern, primary symptoms, or consultation request (e.g. 'Chest pain evaluation', 'Cataract review', 'Knee sports injury')",
+                          },
+                          age: {
+                            type: "INTEGER",
+                            description: "Patient age in years (optional)",
+                          },
+                          gender: {
+                            type: "STRING",
+                            description: "Gender: Male, Female, or Other (optional)",
+                          },
+                          medicalAlerts: {
+                            type: "ARRAY",
+                            items: { type: "STRING" },
+                            description:
+                              "Any known allergies or conditions mentioned by the caller (optional)",
+                          },
+                        },
+                        required: ["fullName"],
+                      },
+                    },
+                    {
                       name: "lookup_patient_info",
                       description:
                         "Looks up active patient medical history, previous procedure details, clinical notes, and doctor information from the database.",
@@ -792,6 +844,16 @@ export function registerExotelMedia(server) {
 
               const booking = bookAppointment({
                 patientId: patientIdToBook,
+                patientName:
+                  call.args?.patientName ||
+                  (activeContext?.patient?.fullName !== "Valued Patient" &&
+                  activeContext?.patient?.fullName !== "New Hospital Patient"
+                    ? activeContext?.patient?.fullName
+                    : null),
+                phone:
+                  activeContext?.patient?.phone ||
+                  targetPhone ||
+                  process.env.TEST_PHONE_NUMBER,
                 doctorId: doctorIdToBook,
                 department: departmentToBook,
                 date: dateToBook,
@@ -801,6 +863,13 @@ export function registerExotelMedia(server) {
                   call.args?.notes ||
                   "Booked by Maya AI voice assistant during live hospital call",
               });
+
+              if (booking.patientId) {
+                targetPatientId = booking.patientId;
+                if (activeContext?.patient) {
+                  activeContext.patient.patientId = booking.patientId;
+                }
+              }
 
               console.log(
                 "✅ Successfully recorded appointment in SQLite database:",
@@ -814,7 +883,7 @@ export function registerExotelMedia(server) {
                 phone:
                   activeContext?.patient.phone ||
                   process.env.TEST_PHONE_NUMBER,
-                patientId: activeContext?.patient.patientId,
+                patientId: booking.patientId || activeContext?.patient.patientId,
                 callReason: activeContext?.activeContext.callReason,
                 outcome: "APPOINTMENT_SCHEDULED",
                 notes: `Appointment ${booking.appointmentId} confirmed for ${booking.date} at ${booking.time}`,
@@ -856,6 +925,119 @@ export function registerExotelMedia(server) {
                           error: bookingErr.message,
                           message:
                             "Failed to record appointment in database. Please ask caller for another time or confirm with reception.",
+                        },
+                      },
+                    },
+                  ],
+                },
+              });
+            }
+          } else if (call.name === "register_new_patient") {
+            console.log("Gemini requested register_new_patient:", call.args);
+
+            try {
+              const fullName = call.args?.fullName?.trim() || "New Hospital Patient";
+              const preferredName =
+                call.args?.preferredName?.trim() || fullName.split(" ")[0];
+              const phone =
+                call.args?.phone ||
+                activeContext?.patient?.phone ||
+                targetPhone ||
+                process.env.TEST_PHONE_NUMBER ||
+                "+918218627040";
+              const department = call.args?.department || "General Medicine";
+              const reason =
+                call.args?.reason || "New patient consultation inquiry";
+
+              // Find doctor for this department
+              const db = getDb();
+              const doc =
+                db
+                  .prepare(
+                    "SELECT * FROM doctors WHERE LOWER(department) LIKE ? LIMIT 1",
+                  )
+                  .get(`%${department.toLowerCase().slice(0, 4)}%`) ||
+                db.prepare("SELECT * FROM doctors LIMIT 1").get();
+
+              const newPatient = createPatient({
+                fullName,
+                preferredName,
+                phone,
+                age: call.args?.age ? Number(call.args.age) : null,
+                gender: call.args?.gender || "Other",
+                assignedDoctorId: doc?.doctor_id || "DOC-MED",
+                medicalAlerts: Array.isArray(call.args?.medicalAlerts)
+                  ? call.args.medicalAlerts
+                  : [],
+                insurancePlan: "Standard Hospital Care",
+                generalNotes: `Registered during live Maya AI call. Reason: ${reason}`,
+                activeContext: {
+                  callGoal: "NEW_PATIENT_APPOINTMENT",
+                  callReason: reason,
+                  lastVisitDate: new Date().toISOString().split("T")[0],
+                  lastVisitProcedure: "New Patient Telephony Registration",
+                  lastVisitDoctor: doc?.name || "Dr. Vikram Mehta",
+                  lastVisitOutcome:
+                    "New patient profile successfully registered via voice assistant",
+                  pendingAction: `Schedule initial ${department} consultation with ${doc?.name || "Specialist"}`,
+                  recommendedDurationMinutes: 30,
+                  urgency: "MEDIUM",
+                },
+              });
+
+              // Update session activeContext so all subsequent queries / bookings link to this new patient
+              activeContext = lookupPatientContext({
+                patientId: newPatient.patientId,
+              });
+              targetPatientId = newPatient.patientId;
+
+              // Update call log with new patient ID
+              saveCallLog({
+                callSid: callSid || `EXO-${Date.now()}`,
+                phone,
+                patientId: newPatient.patientId,
+                callReason: reason,
+                outcome: "IN_PROGRESS",
+                notes: `Registered new patient: ${newPatient.fullName} (${newPatient.patientId}) - Department: ${department}`,
+              });
+
+              console.log(
+                "✅ Registered new patient in hospital database:",
+                newPatient,
+              );
+
+              sendGemini({
+                toolResponse: {
+                  functionResponses: [
+                    {
+                      id: call.id,
+                      response: {
+                        output: {
+                          success: true,
+                          patientId: newPatient.patientId,
+                          fullName: newPatient.fullName,
+                          department: doc?.department || department,
+                          assignedDoctor: doc?.name,
+                          message: `Patient ${newPatient.fullName} successfully registered in ${doc?.department || department} Department with ${doc?.name}. You can now check open slots or book their appointment.`,
+                        },
+                      },
+                    },
+                  ],
+                },
+              });
+            } catch (regErr) {
+              console.error("❌ Failed to register new patient:", regErr);
+              sendGemini({
+                toolResponse: {
+                  functionResponses: [
+                    {
+                      id: call.id,
+                      response: {
+                        output: {
+                          success: false,
+                          error: regErr.message,
+                          message:
+                            "Could not register patient record. Proceeding with temporary booking details.",
                         },
                       },
                     },

@@ -95,22 +95,29 @@ ${slotsDescription}
 
   // Fallback for new / unregistered callers
   return `
-You are Maya, a friendly and helpful AI Patient Care Navigator for Apex Multispecialty Hospital.
-Apex Multispecialty Hospital provides comprehensive hospital care across Cardiology, Ophthalmology, ENT, Hepatology, Dental, Orthopedics, and General Medicine.
+You are Maya, a warm, professional, and empathetic AI Patient Care Navigator for Apex Multispecialty Hospital.
+Apex Multispecialty Hospital provides comprehensive hospital care across 7 departments:
+• Cardiology (Heart care, stents, ECG, chest health)
+• Ophthalmology (Eye care, cataracts, retina, vision)
+• ENT (Ear, Nose & Throat, sinus, hearing, throat)
+• Hepatology & Gastroenterology (Liver, stomach, digestive, FibroScan)
+• Dental & Maxillofacial (Teeth, gums, crowns, oral surgery)
+• Orthopedics (Bones, joints, knee, spine, fractures, sports injuries)
+• General Medicine (Internal medicine, routine health, fevers, diabetes)
 
 === CALL CONTEXT ===
 • Caller Phone: ${patient.phone}
-• Caller Status: New / Unregistered Patient
-• Doctor on Duty: ${doctor.name} (${doctor.specialty} - ${doctor.department || "General Medicine"})
+• Caller Status: NEW / UNREGISTERED CALLER
+• Call Goal: Inquire caller's name, collect medical concern/department, register them via 'register_new_patient', and book an appointment slot.
 
-=== CURRENTLY AVAILABLE SLOTS IN DATABASE ===
-${slotsDescription}
+=== INSTRUCTIONS FOR NEW CALLER WORKFLOW ===
+1. WELCOME & NAME: Welcome the caller warmly to Apex Multispecialty Hospital. Inquire what brings them in or which department they need, and ask for their name.
+2. AUTOMATIC REGISTRATION: As soon as the caller provides their name and reason/department, call the 'register_new_patient' tool! This automatically creates their official patient profile in the hospital database.
+3. SLOT DISCOVERY: Call 'check_available_slots' for their desired department or doctor (e.g. Cardiology, ENT, Ophthalmology, Orthopedics, Dental, etc.) and propose convenient dates/times.
+4. CONFIRM BOOKING: When the caller agrees on a time, call 'book_appointment' with the patientId (or caller name), doctor/department, date, and time.
+5. CONCLUSION: Warmly confirm the scheduled appointment, give instructions to report to the reception desk 10 minutes prior, and call 'end_call'.
 
-=== CONVERSATIONAL RULES ===
-1. PERSONA: You are Maya. Speak naturally, warmly, and concisely. Ask one question at a time.
-2. WELCOME: Welcome the caller to Apex Multispecialty Hospital. Ask how you can assist them today, which medical department or specialist they need, and collect their name.
-3. SCHEDULING: Offer the available slots above or query the database using 'check_available_slots', and use the 'book_appointment' tool to confirm their hospital visit.
-4. CALL CONCLUSION: When finished, say a friendly goodbye, then call 'end_call'.
+${END_RULES}
 `;
 }
 
@@ -120,7 +127,7 @@ ${slotsDescription}
 export function buildInitialGreetingPrompt(context) {
   const { patient, activeContext, doctor, isKnownPatient } = context;
 
-  if (isKnownPatient) {
+  if (isKnownPatient && patient.preferredName && patient.preferredName !== "there") {
     const dept = doctor.department || "Specialist Care";
     return (
       `The phone call has just connected with ${patient.preferredName}. ` +
@@ -131,8 +138,8 @@ export function buildInitialGreetingPrompt(context) {
   }
 
   return (
-    "The call has just connected. Greet the caller warmly, introduce yourself as Maya " +
-    "from Apex Multispecialty Hospital, and ask how you can assist them today. Keep it short."
+    "The call has just connected with a new caller. Greet the caller warmly, introduce yourself as Maya " +
+    "from Apex Multispecialty Hospital, ask their name, and ask how you can assist them today across our medical departments. Keep your opening greeting under 20 words."
   );
 }
 

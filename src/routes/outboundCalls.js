@@ -328,7 +328,7 @@ router.post(["/api/db/clear", "/api/db/reset"], (_req, res) => {
  */
 router.post("/api/calls", async (req, res) => {
   try {
-    const { to, patientId, forceTestPhone } = req.body ?? {};
+    const { to, patientId, forceTestPhone, isNewPatient } = req.body ?? {};
 
     const testPhoneNumber = requiredEnv("TEST_PHONE_NUMBER");
     const targetNumber = to || testPhoneNumber;
@@ -349,11 +349,25 @@ router.post("/api/calls", async (req, res) => {
       });
     }
 
+    // Determine if this is an explicit new caller/patient inquiry
+    const isNew = Boolean(
+      isNewPatient ||
+      !patientId ||
+      patientId === "NEW" ||
+      patientId === "NEW_PATIENT",
+    );
+
     // Step 1: Active Database Context Lookup (prioritizes patientId, falls back to targetNumber)
-    const activeContext = lookupPatientContext({ phone: targetNumber, patientId });
+    const activeContext = lookupPatientContext({
+      phone: targetNumber,
+      patientId: isNew ? undefined : patientId,
+      isNewPatient: isNew,
+    });
+
     console.log("Looked up active context for outbound call:", {
       phone: targetNumber,
       dialedTo: dialNumber,
+      isNewCaller: isNew,
       patientId: activeContext.patient.patientId,
       patientName: activeContext.patient.fullName,
       callGoal: activeContext.activeContext.callGoal,
@@ -362,7 +376,7 @@ router.post("/api/calls", async (req, res) => {
 
     // Track active call in registry immediately so incoming WebSocket is guaranteed to identify patient
     registerPendingCall(null, {
-      patientId: activeContext.patient.patientId,
+      patientId: isNew ? "NEW" : activeContext.patient.patientId,
       phone: dialNumber,
       activeContext,
     });
@@ -385,12 +399,10 @@ router.post("/api/calls", async (req, res) => {
     // immediately receives the exact phone number and patientId on connect.
     const parsedStreamUrl = new URL(streamUrl);
     parsedStreamUrl.searchParams.set("phone", dialNumber);
-    if (activeContext.patient?.patientId) {
-      parsedStreamUrl.searchParams.set(
-        "patientId",
-        activeContext.patient.patientId,
-      );
-    }
+    parsedStreamUrl.searchParams.set(
+      "patientId",
+      isNew ? "NEW" : activeContext.patient.patientId,
+    );
     const finalStreamUrl = parsedStreamUrl.toString();
 
     const endpoint = `${baseUrl}/v1/Accounts/${encodeURIComponent(accountSid)}/Calls/connect`;
@@ -402,7 +414,7 @@ router.post("/api/calls", async (req, res) => {
       StreamUrl: finalStreamUrl,
       StreamType: "bidirectional",
       TimeLimit: "300",
-      CustomField: `patient-${activeContext.patient.patientId}`,
+      CustomField: isNew ? "patient-NEW" : `patient-${activeContext.patient.patientId}`,
     });
 
     const auth = Buffer.from(`${apiKey}:${apiToken}`).toString("base64");
