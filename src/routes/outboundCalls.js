@@ -1,4 +1,9 @@
 import { Router } from "express";
+import {
+  lookupPatientContext,
+  getAvailableSlots,
+  getDb,
+} from "../db/database.js";
 
 const router = Router();
 
@@ -12,9 +17,68 @@ function requiredEnv(name) {
   return value;
 }
 
+/**
+ * GET /api/context
+ * Look up the active clinical and patient context by phone or patientId.
+ */
+router.get("/api/context", (req, res) => {
+  try {
+    const phone = req.query.phone || process.env.TEST_PHONE_NUMBER;
+    const patientId = req.query.patientId;
+
+    const context = lookupPatientContext({ phone, patientId });
+    return res.json({ ok: true, context });
+  } catch (error) {
+    console.error("Failed to query context:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/slots
+ * Returns all currently available appointment slots from the database.
+ */
+router.get("/api/slots", (req, res) => {
+  try {
+    const { doctorId, date } = req.query;
+    const slots = getAvailableSlots({ doctorId, date });
+    return res.json({ ok: true, count: slots.length, slots });
+  } catch (error) {
+    console.error("Failed to fetch slots:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/appointments
+ * Returns all booked appointments.
+ */
+router.get("/api/appointments", (_req, res) => {
+  try {
+    const db = getDb();
+    const appointments = db
+      .prepare(`
+        SELECT a.*, p.full_name AS patient_name, p.phone AS patient_phone, d.name AS doctor_name
+        FROM appointments a
+        LEFT JOIN patients p ON a.patient_id = p.patient_id
+        LEFT JOIN doctors d ON a.doctor_id = d.doctor_id
+        ORDER BY a.created_at DESC
+      `)
+      .all();
+    return res.json({ ok: true, count: appointments.length, appointments });
+  } catch (error) {
+    console.error("Failed to fetch appointments:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/calls
+ * Triggers an outbound call with active context lookup.
+ */
 router.post("/api/calls", async (req, res) => {
   try {
-    const { to } = req.body ?? {};
+    const { to, patientId } = req.body ?? {};
 
     // Indian mobile number in +91XXXXXXXXXX format.
     if (typeof to !== "string" || !/^\+91\d{10}$/.test(to)) {
@@ -32,6 +96,15 @@ router.post("/api/calls", async (req, res) => {
       });
     }
 
+    // Step 1: Active Database Context Lookup
+    const activeContext = lookupPatientContext({ phone: to, patientId });
+    console.log("Looked up active context for call:", {
+      phone: to,
+      patientName: activeContext.patient.fullName,
+      callGoal: activeContext.activeContext.callGoal,
+      pendingAction: activeContext.activeContext.pendingAction,
+    });
+
     const accountSid = requiredEnv("EXOTEL_ACCOUNT_SID");
     const apiKey = requiredEnv("EXOTEL_API_KEY");
     const apiToken = requiredEnv("EXOTEL_API_TOKEN");
@@ -46,16 +119,28 @@ router.post("/api/calls", async (req, res) => {
       });
     }
 
+    // Attach active lookup identity into the stream URL so WebSocket server
+    // immediately receives the exact phone number and patientId on connect.
+    const parsedStreamUrl = new URL(streamUrl);
+    parsedStreamUrl.searchParams.set("phone", to);
+    if (activeContext.patient?.patientId) {
+      parsedStreamUrl.searchParams.set(
+        "patientId",
+        activeContext.patient.patientId,
+      );
+    }
+    const finalStreamUrl = parsedStreamUrl.toString();
+
     const endpoint = `${baseUrl}/v1/Accounts/${encodeURIComponent(accountSid)}/Calls/connect`;
 
     // Exotel Connect Voice AI request.
     const form = new URLSearchParams({
       From: to,
       CallerId: callerId,
-      StreamUrl: streamUrl,
+      StreamUrl: finalStreamUrl,
       StreamType: "bidirectional",
       TimeLimit: "300",
-      CustomField: "gemini-prototype",
+      CustomField: `patient-${activeContext.patient.patientId}`,
     });
 
     const auth = Buffer.from(`${apiKey}:${apiToken}`).toString("base64");
@@ -73,7 +158,6 @@ router.post("/api/calls", async (req, res) => {
     const raw = await response.text();
 
     if (!response.ok) {
-      // Avoid logging credentials or the full request.
       console.error("Exotel rejected call request", {
         status: response.status,
         response: raw.slice(0, 1000),
@@ -106,6 +190,12 @@ router.post("/api/calls", async (req, res) => {
         sid: callSid,
         status: status || "accepted",
         from: from || null,
+      },
+      activeContext: {
+        patient: activeContext.patient,
+        clinicalContext: activeContext.activeContext,
+        doctor: activeContext.doctor,
+        availableSlotsCount: activeContext.availableSlots.length,
       },
     });
   } catch (error) {
