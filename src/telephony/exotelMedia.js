@@ -40,6 +40,7 @@ export function registerExotelMedia(server) {
   });
 
   wss.on("connection", (exotel, req) => {
+    console.log("🚀 ~ registerExotelMedia ~ req:", req)
     let gemini = null;
     let streamSid = null;
     let callSid = null;
@@ -50,6 +51,7 @@ export function registerExotelMedia(server) {
     let targetPatientId = null;
 
     try {
+      console.log("🚀 ~ registerExotelMedia ~ req.url:", req.url)
       const parsedUrl = new URL(req.url, "http://localhost");
       targetPhone = parsedUrl.searchParams.get("phone");
       targetPatientId = parsedUrl.searchParams.get("patientId");
