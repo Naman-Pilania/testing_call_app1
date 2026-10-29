@@ -12,6 +12,7 @@ import {
   bookAppointment,
   createPatient,
 } from "../db/database.js";
+import { registerPendingCall } from "../telephony/callRegistry.js";
 
 const router = Router();
 
@@ -302,6 +303,13 @@ router.post("/api/calls", async (req, res) => {
       pendingAction: activeContext.activeContext.pendingAction,
     });
 
+    // Track active call in registry immediately so incoming WebSocket is guaranteed to identify patient
+    registerPendingCall(null, {
+      patientId: activeContext.patient.patientId,
+      phone: dialNumber,
+      activeContext,
+    });
+
     const accountSid = requiredEnv("EXOTEL_ACCOUNT_SID");
     const apiKey = requiredEnv("EXOTEL_API_KEY");
     const apiToken = requiredEnv("EXOTEL_API_TOKEN");
@@ -380,6 +388,13 @@ router.post("/api/calls", async (req, res) => {
         error: "Could not parse Exotel call response",
       });
     }
+
+    // Register callSid in call registry
+    registerPendingCall(callSid, {
+      patientId: activeContext.patient.patientId,
+      phone: dialNumber,
+      activeContext,
+    });
 
     return res.status(202).json({
       accepted: true,

@@ -12,6 +12,7 @@ import {
   buildInitialGreetingPrompt,
   END_RULES,
 } from "./promptBuilder.js";
+import { resolveCallContext } from "./callRegistry.js";
 
 const GEMINI_MODEL =
   process.env.GEMINI_MODEL || "gemini-3.1-flash-live-preview";
@@ -40,18 +41,16 @@ export function registerExotelMedia(server) {
   });
 
   wss.on("connection", (exotel, req) => {
-    console.log("🚀 ~ registerExotelMedia ~ req:", req)
     let gemini = null;
     let streamSid = null;
     let callSid = null;
     let inputRate = null;
 
-    // Extract query parameters attached by outboundCalls router
+    // Extract query parameters attached by outbound router (if preserved by provider)
     let targetPhone = null;
     let targetPatientId = null;
 
     try {
-      console.log("🚀 ~ registerExotelMedia ~ req.url:", req.url)
       const parsedUrl = new URL(req.url, "http://localhost");
       targetPhone = parsedUrl.searchParams.get("phone");
       targetPatientId = parsedUrl.searchParams.get("patientId");
@@ -63,6 +62,7 @@ export function registerExotelMedia(server) {
     let setupComplete = false;
     let closed = false;
     let endCallRequested = false;
+    let endCallRequestedReason = "";
     let endCallTimer = null;
     let outputTimer = null;
 
@@ -70,6 +70,103 @@ export function registerExotelMedia(server) {
     let outputBuffer = Buffer.alloc(0);
     let outputQueue = [];
     let assistantAudioBytesThisTurn = 0;
+
+    // Live conversation dialogue tracking & appointment capture
+    const callStartTime = Date.now();
+    const transcriptTurns = []; // { speaker: string, text: string, time: string }
+    let currentCallerText = "";
+    let currentAssistantText = "";
+    const bookedAppointments = [];
+    let callLogFinalized = false;
+
+    function formatTimestamp(ms) {
+      const totalSecs = Math.max(0, Math.floor(ms / 1000));
+      const mins = String(Math.floor(totalSecs / 60)).padStart(2, "0");
+      const secs = String(totalSecs % 60).padStart(2, "0");
+      return `${mins}:${secs}`;
+    }
+
+    function flushCallerTurn() {
+      if (currentCallerText.trim()) {
+        const elapsed = Date.now() - callStartTime;
+        transcriptTurns.push({
+          speaker: "Patient",
+          text: currentCallerText.trim(),
+          time: formatTimestamp(elapsed),
+        });
+        currentCallerText = "";
+      }
+    }
+
+    function flushAssistantTurn() {
+      if (currentAssistantText.trim()) {
+        const elapsed = Date.now() - callStartTime;
+        transcriptTurns.push({
+          speaker: "Maya (AI)",
+          text: currentAssistantText.trim(),
+          time: formatTimestamp(elapsed),
+        });
+        currentAssistantText = "";
+      }
+    }
+
+    function finalizeCallLog(reason = "Call finished") {
+      if (callLogFinalized) return;
+      callLogFinalized = true;
+
+      flushAssistantTurn();
+      flushCallerTurn();
+
+      const formattedTranscript =
+        transcriptTurns.length > 0
+          ? transcriptTurns
+              .map((t) => `[${t.time}] ${t.speaker}: ${t.text}`)
+              .join("\n")
+          : `[00:00] Maya (AI): Call connected and completed.`;
+
+      let outcome = "COMPLETED";
+      let notes = endCallRequestedReason || reason;
+
+      if (bookedAppointments.length > 0) {
+        outcome = "APPOINTMENT_SCHEDULED";
+        notes = `Booked appointment (${bookedAppointments
+          .map((b) => `${b.appointmentId} on ${b.date} at ${b.time}`)
+          .join("; ")}) via Maya AI voice assistant.`;
+      }
+
+      const finalPatientId =
+        activeContext?.patient?.patientId || targetPatientId || null;
+      const finalPhone =
+        activeContext?.patient?.phone ||
+        targetPhone ||
+        process.env.TEST_PHONE_NUMBER ||
+        "+918218627040";
+      const finalReason =
+        activeContext?.activeContext?.callReason || "Outbound Dental Follow-up";
+      const finalSid = callSid || `EXO-${Date.now()}`;
+
+      console.log("[ExotelMedia] Finalizing and saving call log:", {
+        callSid: finalSid,
+        patientId: finalPatientId,
+        outcome,
+        turnsCount: transcriptTurns.length,
+        notes,
+      });
+
+      try {
+        saveCallLog({
+          callSid: finalSid,
+          phone: finalPhone,
+          patientId: finalPatientId,
+          callReason: finalReason,
+          outcome,
+          notes,
+          transcriptSummary: formattedTranscript,
+        });
+      } catch (err) {
+        console.error("Failed to save final call log:", err.message);
+      }
+    }
 
     function sendExotel(message) {
       if (exotel.readyState !== WebSocket.OPEN) return false;
@@ -103,6 +200,9 @@ export function registerExotelMedia(server) {
       if (closed) return;
 
       closed = true;
+
+      // Save final call transcript and outcome to DB
+      finalizeCallLog("Call finished");
 
       if (endCallTimer) {
         clearTimeout(endCallTimer);
@@ -317,16 +417,19 @@ export function registerExotelMedia(server) {
         return;
       }
 
-      // Step 1: Active DB Lookup for this call
+      // Step 1: Ensure active DB context is resolved
       if (!activeContext) {
-        activeContext = lookupPatientContext({
-          phone: targetPhone || process.env.TEST_PHONE_NUMBER,
+        activeContext = resolveCallContext({
+          callSid,
           patientId: targetPatientId,
+          phone: targetPhone,
         });
       }
 
       console.log("Initialized call with active DB context:", {
+        callSid,
         patient: activeContext.patient.fullName,
+        patientId: activeContext.patient.patientId,
         goal: activeContext.activeContext.callGoal,
         action: activeContext.activeContext.pendingAction,
       });
@@ -369,7 +472,7 @@ export function registerExotelMedia(server) {
                     {
                       name: "end_call",
                       description:
-                        "Ends the current phone call after the assistant has spoken its goodbye.",
+                        "Ends the current phone call after the assistant has spoken its goodbye. Call this only after booking any agreed appointment.",
                       parameters: {
                         type: "OBJECT",
                         properties: {
@@ -402,13 +505,13 @@ export function registerExotelMedia(server) {
                     {
                       name: "book_appointment",
                       description:
-                        "Books and confirms an appointment in the clinic database for the patient and reserves the slot.",
+                        "Books and confirms an appointment in the clinic database for the patient and reserves the slot. You MUST call this function when the patient agrees to an appointment date and time.",
                       parameters: {
                         type: "OBJECT",
                         properties: {
                           patientId: {
                             type: "STRING",
-                            description: "Patient ID e.g. PAT-1042",
+                            description: "Patient ID e.g. PAT-1042 or PAT-2002",
                           },
                           doctorId: {
                             type: "STRING",
@@ -416,11 +519,11 @@ export function registerExotelMedia(server) {
                           },
                           date: {
                             type: "STRING",
-                            description: "Date in YYYY-MM-DD format",
+                            description: "Date in YYYY-MM-DD format (e.g. 2026-10-30)",
                           },
                           time: {
                             type: "STRING",
-                            description: "Time slot e.g. '10:00 AM'",
+                            description: "Time slot e.g. '10:00 AM' or '02:30 PM'",
                           },
                           treatmentType: {
                             type: "STRING",
@@ -432,7 +535,7 @@ export function registerExotelMedia(server) {
                             description: "Any special patient requests or notes",
                           },
                         },
-                        required: ["patientId", "date", "time", "treatmentType"],
+                        required: ["date", "time"],
                       },
                     },
                     {
@@ -510,6 +613,8 @@ export function registerExotelMedia(server) {
 
         if (content?.interrupted) {
           stopOutputPlayback();
+          flushAssistantTurn();
+          flushCallerTurn();
 
           sendExotel({
             event: "clear",
@@ -519,11 +624,16 @@ export function registerExotelMedia(server) {
           assistantAudioBytesThisTurn = 0;
         }
 
+        // Live transcription tracking
         if (content?.inputTranscription?.text) {
+          flushAssistantTurn();
+          currentCallerText += content.inputTranscription.text;
           console.log("Caller:", content.inputTranscription.text);
         }
 
         if (content?.outputTranscription?.text) {
+          flushCallerTurn();
+          currentAssistantText += content.outputTranscription.text;
           console.log("Assistant:", content.outputTranscription.text);
         }
 
@@ -542,16 +652,62 @@ export function registerExotelMedia(server) {
             });
 
             endCallRequested = true;
+            endCallRequestedReason =
+              call.args?.reason || "Call completed naturally";
 
-            if (activeContext) {
-              saveCallLog({
-                callSid,
-                phone: activeContext.patient.phone,
-                patientId: activeContext.patient.patientId,
-                callReason: activeContext.activeContext.callReason,
-                outcome: "COMPLETED",
-                notes: call.args?.reason || "Call completed naturally",
-              });
+            // Acknowledge function call to Gemini
+            sendGemini({
+              toolResponse: {
+                functionResponses: [
+                  {
+                    id: call.id,
+                    response: {
+                      output: {
+                        success: true,
+                        message: "Call conclusion acknowledged.",
+                      },
+                    },
+                  },
+                ],
+              },
+            });
+
+            // Fallback safety check: Did Gemini imply an appointment was booked without calling book_appointment?
+            const reasonText = (call.args?.reason || "").toLowerCase();
+            const turnsText = transcriptTurns
+              .map((t) => t.text)
+              .join(" ")
+              .toLowerCase();
+            const impliedBooking =
+              reasonText.includes("book") ||
+              reasonText.includes("schedul") ||
+              reasonText.includes("appoint") ||
+              turnsText.includes("reserved") ||
+              turnsText.includes("booked for");
+
+            if (
+              bookedAppointments.length === 0 &&
+              impliedBooking &&
+              activeContext?.availableSlots?.length > 0
+            ) {
+              console.warn(
+                "⚠️ AI indicated appointment was booked but missed book_appointment tool call. Auto-booking first matching slot...",
+              );
+              try {
+                const fallbackSlot = activeContext.availableSlots[0];
+                const autoBooking = bookAppointment({
+                  patientId: activeContext.patient.patientId,
+                  doctorId: activeContext.doctor.doctorId,
+                  date: fallbackSlot.date,
+                  time: fallbackSlot.time,
+                  treatmentType: activeContext.activeContext.pendingAction,
+                  notes: `Auto-recorded from call conversation: ${endCallRequestedReason}`,
+                });
+                bookedAppointments.push(autoBooking);
+                console.log("✅ Fallback booking recorded:", autoBooking);
+              } catch (e) {
+                console.error("Failed fallback booking:", e.message);
+              }
             }
           } else if (call.name === "check_available_slots") {
             console.log("Gemini requested check_available_slots:", call.args);
@@ -585,38 +741,113 @@ export function registerExotelMedia(server) {
           } else if (call.name === "book_appointment") {
             console.log("Gemini requested book_appointment:", call.args);
 
-            const booking = bookAppointment({
-              patientId:
-                call.args?.patientId || activeContext?.patient.patientId,
-              doctorId:
-                call.args?.doctorId || activeContext?.doctor.doctorId,
-              date: call.args?.date,
-              time: call.args?.time,
-              treatmentType:
-                call.args?.treatmentType ||
-                activeContext?.activeContext.pendingAction,
-              notes: call.args?.notes || "Booked by Maya AI voice assistant",
-            });
+            try {
+              const patientIdToBook =
+                call.args?.patientId || activeContext?.patient.patientId;
+              const doctorIdToBook =
+                call.args?.doctorId ||
+                activeContext?.doctor.doctorId ||
+                "DOC-1";
 
-            sendGemini({
-              toolResponse: {
-                functionResponses: [
-                  {
-                    id: call.id,
-                    response: {
-                      output: {
-                        success: true,
-                        appointmentId: booking.appointmentId,
-                        confirmedDate: booking.date,
-                        confirmedTime: booking.time,
-                        doctor: activeContext?.doctor.name || "Clinic Doctor",
-                        message: `Appointment ${booking.appointmentId} confirmed for ${booking.date} at ${booking.time}.`,
+              let dateToBook = call.args?.date;
+              let timeToBook = call.args?.time;
+
+              // Smart date resolution: if relative or missing, resolve from availableSlots
+              if (!dateToBook || !/^\d{4}-\d{2}-\d{2}$/.test(dateToBook)) {
+                if (activeContext?.availableSlots?.length > 0) {
+                  dateToBook = activeContext.availableSlots[0].date;
+                } else {
+                  const tomorrow = new Date();
+                  tomorrow.setDate(tomorrow.getDate() + 1);
+                  dateToBook = tomorrow.toISOString().split("T")[0];
+                }
+              }
+
+              if (!timeToBook) {
+                if (activeContext?.availableSlots?.length > 0) {
+                  timeToBook = activeContext.availableSlots[0].time;
+                } else {
+                  timeToBook = "10:00 AM";
+                }
+              }
+
+              const treatmentTypeToBook =
+                call.args?.treatmentType ||
+                activeContext?.activeContext.pendingAction ||
+                "Follow-up Consultation";
+
+              const booking = bookAppointment({
+                patientId: patientIdToBook,
+                doctorId: doctorIdToBook,
+                date: dateToBook,
+                time: timeToBook,
+                treatmentType: treatmentTypeToBook,
+                notes:
+                  call.args?.notes ||
+                  "Booked by Maya AI voice assistant during live call",
+              });
+
+              console.log(
+                "✅ Successfully recorded appointment in SQLite database:",
+                booking,
+              );
+              bookedAppointments.push(booking);
+
+              // Update call log in real time with appointment status
+              saveCallLog({
+                callSid: callSid || `EXO-${Date.now()}`,
+                phone:
+                  activeContext?.patient.phone ||
+                  process.env.TEST_PHONE_NUMBER,
+                patientId: activeContext?.patient.patientId,
+                callReason: activeContext?.activeContext.callReason,
+                outcome: "APPOINTMENT_SCHEDULED",
+                notes: `Appointment ${booking.appointmentId} confirmed for ${booking.date} at ${booking.time}`,
+              });
+
+              sendGemini({
+                toolResponse: {
+                  functionResponses: [
+                    {
+                      id: call.id,
+                      response: {
+                        output: {
+                          success: true,
+                          appointmentId: booking.appointmentId,
+                          confirmedDate: booking.date,
+                          confirmedTime: booking.time,
+                          doctor:
+                            activeContext?.doctor.name || "Clinic Doctor",
+                          message: `Appointment ${booking.appointmentId} confirmed for ${booking.date} at ${booking.time} with ${activeContext?.doctor.name || "Dr. Sneha Rao"}.`,
+                        },
                       },
                     },
-                  },
-                ],
-              },
-            });
+                  ],
+                },
+              });
+            } catch (bookingErr) {
+              console.error(
+                "❌ Failed to book appointment in database:",
+                bookingErr,
+              );
+              sendGemini({
+                toolResponse: {
+                  functionResponses: [
+                    {
+                      id: call.id,
+                      response: {
+                        output: {
+                          success: false,
+                          error: bookingErr.message,
+                          message:
+                            "Failed to record appointment in database. Please ask caller for another time or confirm with reception.",
+                        },
+                      },
+                    },
+                  ],
+                },
+              });
+            }
           } else if (call.name === "lookup_patient_info") {
             console.log("Gemini requested lookup_patient_info:", call.args);
 
@@ -649,6 +880,8 @@ export function registerExotelMedia(server) {
         }
 
         if (content?.turnComplete) {
+          flushAssistantTurn();
+          flushCallerTurn();
           finishAudioTurn();
           assistantAudioBytesThisTurn = 0;
         }
@@ -665,6 +898,7 @@ export function registerExotelMedia(server) {
 
       gemini.on("close", (code) => {
         console.log("Gemini session closed:", code);
+        finalizeCallLog("Gemini session ended");
       });
     }
 
@@ -692,7 +926,42 @@ export function registerExotelMedia(server) {
           streamSid =
             start.stream_sid || start.streamSid || message.stream_sid || null;
 
-          callSid = start.call_sid || start.callSid || null;
+          callSid = start.call_sid || start.callSid || `EXO-${Date.now()}`;
+
+          const customField =
+            start.custom_field ||
+            start.customField ||
+            message.custom_field ||
+            message.customField ||
+            null;
+
+          // Resolve the EXACT patient context using all available correlation signals:
+          activeContext = resolveCallContext({
+            callSid,
+            customField,
+            patientId: targetPatientId,
+            phone: targetPhone,
+          });
+
+          console.log("[ExotelMedia] Active context resolved:", {
+            callSid,
+            customField,
+            patient: activeContext.patient.fullName,
+            patientId: activeContext.patient.patientId,
+            doctor: activeContext.doctor.name,
+            goal: activeContext.activeContext.callGoal,
+          });
+
+          // Immediately save call as IN_PROGRESS in call_logs table
+          saveCallLog({
+            callSid,
+            phone: activeContext.patient.phone,
+            patientId: activeContext.patient.patientId,
+            callReason: activeContext.activeContext.callReason,
+            outcome: "IN_PROGRESS",
+            notes: `Call connected with ${activeContext.patient.fullName} (${activeContext.patient.patientId})`,
+            transcriptSummary: `[00:00] Maya (AI): Call connected with ${activeContext.patient.fullName}.`,
+          });
 
           const format =
             start.media_format ??

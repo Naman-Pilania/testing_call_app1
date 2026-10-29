@@ -550,7 +550,7 @@ export function getAllPatients() {
       ac.urgency,
       ac.is_active AS context_is_active,
       (SELECT COUNT(*) FROM appointments a WHERE a.patient_id = p.patient_id) AS appointments_count,
-      (SELECT COUNT(*) FROM call_logs cl WHERE cl.patient_id = p.patient_id OR cl.phone = p.phone) AS calls_count
+      (SELECT COUNT(*) FROM call_logs cl WHERE (cl.patient_id IS NOT NULL AND cl.patient_id = p.patient_id) OR (cl.patient_id IS NULL AND cl.phone = p.phone)) AS calls_count
     FROM patients p
     LEFT JOIN doctors d ON p.assigned_doctor_id = d.doctor_id
     LEFT JOIN active_contexts ac ON ac.patient_id = p.patient_id AND ac.is_active = 1
@@ -640,7 +640,8 @@ export function getAllCallLogs() {
       p.full_name AS patient_name,
       p.preferred_name AS patient_preferred_name
     FROM call_logs c
-    LEFT JOIN patients p ON c.patient_id = p.patient_id OR c.phone = p.phone
+    LEFT JOIN patients p ON (c.patient_id IS NOT NULL AND c.patient_id = p.patient_id)
+                         OR (c.patient_id IS NULL AND c.phone = p.phone)
     ORDER BY c.started_at DESC
   `).all().map((c) => ({
     callSid: c.call_sid,
@@ -670,7 +671,8 @@ export function getCallLogBySid(callSid) {
       p.assigned_doctor_id,
       d.name AS doctor_name
     FROM call_logs c
-    LEFT JOIN patients p ON c.patient_id = p.patient_id OR c.phone = p.phone
+    LEFT JOIN patients p ON (c.patient_id IS NOT NULL AND c.patient_id = p.patient_id)
+                         OR (c.patient_id IS NULL AND c.phone = p.phone)
     LEFT JOIN doctors d ON p.assigned_doctor_id = d.doctor_id
     WHERE c.call_sid = ?
   `).get(callSid);
