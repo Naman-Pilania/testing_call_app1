@@ -37,7 +37,7 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
   const patients = [
     {
       patient_id: "PAT-1042",
-      phone: testPhone,
+      phone: +918283828192,
       full_name: "Surender Kumar",
       preferred_name: "Surender",
       age: 34,
@@ -66,6 +66,24 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
       preferred_time_of_day: "Afternoon",
       general_notes:
         "Overdue for 6-month hygiene recall and preventative cleaning.",
+    },
+    {
+      patient_id: "PAT-1042",
+      phone: testPhone,
+      full_name: "Naman Pilania",
+      preferred_name: "Naman",
+      age: 24,
+      gender: "Male",
+      assigned_doctor_id: "DOC-1",
+      medical_alerts: JSON.stringify([
+        "Allergic to Penicillin",
+        "Mild dental anxiety",
+        "Prefers morning appointments",
+      ]),
+      insurance_plan: "BrightCare Dental Platinum Plan",
+      preferred_time_of_day: "Morning",
+      general_notes:
+        "Patient underwent root canal therapy on Tooth #14 recently; needs permanent zirconia crown fitting.",
     },
   ];
 
