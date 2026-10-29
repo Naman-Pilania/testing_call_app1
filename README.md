@@ -392,7 +392,19 @@ ngrok http 3001
 ```
 Set `PUBLIC_WSS_URL` in `.env` to the assigned `wss://...` address.
 
-### 4. Start the Application
+### 4. Build & Database Management (Debugging & Testing)
+To clear and re-seed the SQLite database with fresh doctors, patients, clinical contexts, and appointment slots:
+```bash
+# Option A: Run build or clear-db command
+npm run build       # Clears tables and re-seeds database
+npm run db:clear    # Alias for clearing and re-seeding
+npm run db:reset    # Alias for clearing and re-seeding
+
+# Option B: Run server with auto-clear enabled
+CLEAR_DB=true npm run dev
+```
+
+### 5. Start the Application
 ```bash
 # Starts Express, initializes SQLite, and registers WebSockets
 npm run dev
@@ -467,6 +479,30 @@ Inspects the looked-up active context for a phone number.
     "activeContext": {
       "patient": { "fullName": "Surender Kumar", "preferredName": "Surender" },
       "clinicalContext": { "callGoal": "CROWN_PLACEMENT_SCHEDULING" }
+    }
+  }
+  ```
+
+---
+
+### 5. Clear / Reset Database (Debugging & Testing)
+Resets all clinic tables and re-seeds fresh data on the running server.
+* **Endpoint**: `POST /api/db/clear` (or `POST /api/db/reset`)
+* **Response**:
+  ```json
+  {
+    "ok": true,
+    "message": "Database cleared and re-seeded successfully for debugging",
+    "result": {
+      "success": true,
+      "cleared": true,
+      "reseeded": true,
+      "counts": {
+        "doctorsCount": 2,
+        "patientsCount": 3,
+        "contextsCount": 3,
+        "slotsCount": 9
+      }
     }
   }
   ```

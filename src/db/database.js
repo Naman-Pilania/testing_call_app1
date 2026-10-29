@@ -16,39 +16,53 @@ const DB_PATH = join(__dirname, "../../data/clinic.db");
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
 let dbInstance = null;
+let autoClearedOnStartup = false;
 
 /**
- * Initializes and returns the SQLite database instance.
- * Applies schema and seeds sample data on first run.
+ * Returns the raw Database instance without running schema or seeds.
  */
-export function getDb() {
-  if (dbInstance) return dbInstance;
-
-  dbInstance = new Database(DB_PATH);
-  dbInstance.pragma("journal_mode = WAL");
-  dbInstance.pragma("foreign_keys = ON");
-
-  // Apply Schema
-  dbInstance.exec(SQL_SCHEMA);
-
-  // Seed Data if empty
-  seedIfEmpty(dbInstance);
-
+function getRawDb() {
+  if (!dbInstance) {
+    dbInstance = new Database(DB_PATH);
+    dbInstance.pragma("journal_mode = WAL");
+    dbInstance.pragma("foreign_keys = ON");
+  }
   return dbInstance;
 }
 
 /**
- * Seeds initial doctors, patients, contexts, and slots if the database is newly initialized.
+ * Initializes and returns the SQLite database instance.
+ * Automatically clears and reseeds if CLEAR_DB=true or RESET_DB=true.
+ * Otherwise applies schema and seeds sample data if empty.
  */
-function seedIfEmpty(db) {
-  const patientCount = db
-    .prepare("SELECT COUNT(*) AS count FROM patients")
-    .get().count;
+export function getDb() {
+  const db = getRawDb();
 
-  if (patientCount > 0) {
-    return;
+  // If CLEAR_DB=true or RESET_DB=true, clear and re-seed once on startup
+  if (
+    !autoClearedOnStartup &&
+    (process.env.CLEAR_DB === "true" || process.env.RESET_DB === "true")
+  ) {
+    autoClearedOnStartup = true;
+    console.log("[DB] Auto-clearing and reseeding database due to CLEAR_DB/RESET_DB environment flag...");
+    clearDb({ reseed: true });
+    return db;
   }
 
+  // Apply Schema
+  db.exec(SQL_SCHEMA);
+
+  // Seed Data if empty
+  seedIfEmpty(db);
+
+  return db;
+}
+
+/**
+ * Seeds doctors, patients, active clinical contexts, and appointment slots.
+ * Can be called explicitly during resets or initial seeding.
+ */
+export function seedDatabase(db = getRawDb()) {
   console.log("Seeding Brightside Dental Clinic database with active data...");
 
   const { doctors, patients, activeContexts, appointmentSlots } = getSeedData();
@@ -83,7 +97,7 @@ function seedIfEmpty(db) {
     for (const p of patients) {
       insertPatient.run(
         p.patient_id,
-        p.phone,
+        String(p.phone),
         p.full_name,
         p.preferred_name,
         p.age,
@@ -118,6 +132,86 @@ function seedIfEmpty(db) {
 
   seedTx();
   console.log("Database seeded successfully.");
+
+  return {
+    doctorsCount: doctors.length,
+    patientsCount: patients.length,
+    contextsCount: activeContexts.length,
+    slotsCount: appointmentSlots.length,
+  };
+}
+
+/**
+ * Seeds initial doctors, patients, contexts, and slots if the database is newly initialized.
+ */
+export function seedIfEmpty(db = getRawDb()) {
+  const patientCount = db
+    .prepare("SELECT COUNT(*) AS count FROM patients")
+    .get().count;
+
+  if (patientCount > 0) {
+    return false;
+  }
+
+  seedDatabase(db);
+  return true;
+}
+
+/**
+ * Clears all clinic tables and re-initializes the schema.
+ * Optionally re-seeds data (defaults to true for debugging).
+ */
+export function clearDb({ reseed = true } = {}) {
+  const db = getRawDb();
+
+  console.log("[DB] Clearing database tables for fresh debug build...");
+
+  db.pragma("foreign_keys = OFF");
+
+  db.exec(`
+    DROP TABLE IF EXISTS call_logs;
+    DROP TABLE IF EXISTS appointments;
+    DROP TABLE IF EXISTS appointment_slots;
+    DROP TABLE IF EXISTS active_contexts;
+    DROP TABLE IF EXISTS patients;
+    DROP TABLE IF EXISTS doctors;
+  `);
+
+  db.pragma("foreign_keys = ON");
+
+  // Re-apply schema
+  db.exec(SQL_SCHEMA);
+
+  let counts = null;
+  if (reseed) {
+    counts = seedDatabase(db);
+    console.log("[DB] Database cleared and re-seeded successfully.", counts);
+  } else {
+    console.log("[DB] Database cleared (schema re-applied, tables empty).");
+  }
+
+  return {
+    success: true,
+    cleared: true,
+    reseeded: Boolean(reseed),
+    counts,
+  };
+}
+
+/**
+ * Alias for clearDb.
+ */
+export const resetDb = clearDb;
+
+/**
+ * Safely closes the active SQLite database instance.
+ */
+export function closeDb() {
+  if (dbInstance) {
+    dbInstance.close();
+    dbInstance = null;
+    autoClearedOnStartup = false;
+  }
 }
 
 /**

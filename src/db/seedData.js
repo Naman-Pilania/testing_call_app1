@@ -37,7 +37,7 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
   const patients = [
     {
       patient_id: "PAT-1042",
-      phone: +918283828192,
+      phone: "+918283828192",
       full_name: "Surender Kumar",
       preferred_name: "Surender",
       age: 34,
@@ -68,7 +68,7 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
         "Overdue for 6-month hygiene recall and preventative cleaning.",
     },
     {
-      patient_id: "PAT-1042",
+      patient_id: "PAT-2002",
       phone: testPhone,
       full_name: "Naman Pilania",
       preferred_name: "Naman",
@@ -121,6 +121,23 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
         "Book a 30-minute routine teeth cleaning and oral health checkup.",
       recommended_duration_minutes: 30,
       urgency: "MEDIUM",
+      is_active: 1,
+    },
+    {
+      context_id: "CTX-2003",
+      patient_id: "PAT-2002",
+      call_goal: "CROWN_PLACEMENT_SCHEDULING",
+      call_reason:
+        "Post-root-canal recovery check & scheduling permanent crown fitting",
+      last_visit_date: "2026-10-18",
+      last_visit_procedure: "Root Canal Therapy (Stage 1 & 2) on Tooth #14",
+      last_visit_doctor: "Dr. Sneha Rao",
+      last_visit_outcome:
+        "Canals instrumented, disinfected, and sealed. Temporary filling placed. Patient advised mild soreness is normal for 48h. Advised that permanent crown must be placed within 2-3 weeks to avoid tooth fracture.",
+      pending_action:
+        "Check how tooth #14 is feeling (any sensitivity or discomfort?), and schedule a 45-minute appointment for permanent crown fitting.",
+      recommended_duration_minutes: 45,
+      urgency: "HIGH",
       is_active: 1,
     },
   ];

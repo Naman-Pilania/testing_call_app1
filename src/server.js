@@ -5,8 +5,17 @@ import { createServer } from "node:http";
 
 import callsRouter from "./routes/outboundCalls.js";
 import { registerExotelMedia } from "./telephony/exotelMedia.js";
+import { getDb, clearDb } from "./db/database.js";
 
 const PORT = Number(process.env.PORT || 3001);
+
+// Debugging mode: automatically clear and reseed the DB on build/startup
+if (process.env.CLEAR_DB === "true" || process.env.CLEAR_DB === "1") {
+  console.log("[Build/Debug] Auto-clearing and reseeding SQLite database for debug build...");
+  clearDb({ reseed: true });
+} else {
+  getDb();
+}
 
 const app = express();
 const server = createServer(app);

@@ -3,6 +3,7 @@ import {
   lookupPatientContext,
   getAvailableSlots,
   getDb,
+  clearDb,
 } from "../db/database.js";
 
 const router = Router();
@@ -68,6 +69,24 @@ router.get("/api/appointments", (_req, res) => {
     return res.json({ ok: true, count: appointments.length, appointments });
   } catch (error) {
     console.error("Failed to fetch appointments:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/db/clear or POST /api/db/reset
+ * Clears all database tables and reseeds them for debugging and fresh testing.
+ */
+router.post(["/api/db/clear", "/api/db/reset"], (_req, res) => {
+  try {
+    const result = clearDb({ reseed: true });
+    return res.json({
+      ok: true,
+      message: "Database cleared and re-seeded successfully for debugging",
+      result,
+    });
+  } catch (error) {
+    console.error("Failed to clear database:", error.message);
     return res.status(500).json({ error: error.message });
   }
 });
