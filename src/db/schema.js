@@ -1,6 +1,6 @@
 /**
  * Data schemas, required lookup field definitions, and contracts
- * for the Dental Clinic voice assistant.
+ * for Apex Multispecialty Hospital voice assistant.
  */
 
 /**
@@ -84,6 +84,7 @@ export const SQL_SCHEMA = `
     doctor_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     specialty TEXT NOT NULL,
+    department TEXT NOT NULL DEFAULT 'General Medicine',
     available_days TEXT
   );
 
@@ -100,6 +101,7 @@ export const SQL_SCHEMA = `
     appointment_id TEXT PRIMARY KEY,
     patient_id TEXT NOT NULL,
     doctor_id TEXT NOT NULL,
+    department TEXT DEFAULT 'General Medicine',
     date TEXT NOT NULL,
     time TEXT NOT NULL,
     treatment_type TEXT NOT NULL,
@@ -125,6 +127,8 @@ export const SQL_SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone);
   CREATE INDEX IF NOT EXISTS idx_active_contexts_patient ON active_contexts(patient_id);
   CREATE INDEX IF NOT EXISTS idx_slots_doctor_date ON appointment_slots(doctor_id, date, is_available);
+  CREATE INDEX IF NOT EXISTS idx_doctors_department ON doctors(department);
+  CREATE INDEX IF NOT EXISTS idx_appointments_department ON appointments(department);
 `;
 
 /**

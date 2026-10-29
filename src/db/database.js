@@ -63,12 +63,12 @@ export function getDb() {
  * Can be called explicitly during resets or initial seeding.
  */
 export function seedDatabase(db = getRawDb()) {
-  console.log("Seeding Brightside Dental Clinic database with active data...");
+  console.log("Seeding Apex Multispecialty Hospital database with active data...");
 
   const { doctors, patients, activeContexts, appointmentSlots } = getSeedData();
 
   const insertDoctor = db.prepare(
-    "INSERT INTO doctors (doctor_id, name, specialty, available_days) VALUES (?, ?, ?, ?)",
+    "INSERT INTO doctors (doctor_id, name, specialty, department, available_days) VALUES (?, ?, ?, ?, ?)",
   );
 
   const insertPatient = db.prepare(`
@@ -98,7 +98,13 @@ export function seedDatabase(db = getRawDb()) {
 
   const seedTx = db.transaction(() => {
     for (const d of doctors) {
-      insertDoctor.run(d.doctor_id, d.name, d.specialty, d.available_days);
+      insertDoctor.run(
+        d.doctor_id,
+        d.name,
+        d.specialty,
+        d.department || "General Medicine",
+        d.available_days,
+      );
     }
     for (const p of patients) {
       insertPatient.run(
@@ -299,8 +305,9 @@ export function lookupPatientContext({ phone, patientId } = {}) {
         preferredName: patientRow.preferred_name,
         age: patientRow.age || null,
         gender: patientRow.gender || null,
-        assignedDoctorId: patientRow.assigned_doctor_id || "DOC-1",
-        assignedDoctorName: doctorRow?.name || "Dr. Sneha Rao",
+        assignedDoctorId: patientRow.assigned_doctor_id || "DOC-MED",
+        assignedDoctorName: doctorRow?.name || "Dr. Sunita Kapoor",
+        assignedDoctorDepartment: doctorRow?.department || "General Medicine",
         medicalAlerts: parsedAlerts,
         insurancePlan: patientRow.insurance_plan || "Standard Coverage",
         preferredTimeOfDay: patientRow.preferred_time_of_day || "Morning",
@@ -311,28 +318,29 @@ export function lookupPatientContext({ phone, patientId } = {}) {
         callGoal: activeCtxRow?.call_goal || "ROUTINE_FOLLOW_UP",
         callReason:
           activeCtxRow?.call_reason ||
-          "Routine dental checkup and appointment scheduling",
+          "Routine health checkup and clinical appointment scheduling",
         lastVisit: {
           date: activeCtxRow?.last_visit_date || "Recent visit",
           procedure: activeCtxRow?.last_visit_procedure || "General consultation",
-          doctor: activeCtxRow?.last_visit_doctor || doctorRow?.name || "Dr. Sneha Rao",
+          doctor: activeCtxRow?.last_visit_doctor || doctorRow?.name || "Hospital Consultant",
           outcome:
             activeCtxRow?.last_visit_outcome || "Patient in good condition",
         },
         pendingAction:
           activeCtxRow?.pending_action ||
-          "Confirm patient well-being and schedule their next appointment.",
+          "Confirm patient recovery and schedule their next clinical appointment.",
         recommendedDurationMinutes:
           activeCtxRow?.recommended_duration_minutes || 30,
         urgency: activeCtxRow?.urgency || "MEDIUM",
       },
       doctor: {
-        doctorId: doctorRow?.doctor_id || "DOC-1",
-        name: doctorRow?.name || "Dr. Sneha Rao",
+        doctorId: doctorRow?.doctor_id || "DOC-MED",
+        name: doctorRow?.name || "Dr. Sunita Kapoor",
         specialty:
-          doctorRow?.specialty || "Senior Endodontist & General Dentist",
+          doctorRow?.specialty || "Consultant Physician & Diabetologist",
+        department: doctorRow?.department || "General Medicine",
         availableDays:
-          doctorRow?.available_days || "Monday, Tuesday, Thursday, Friday",
+          doctorRow?.available_days || "Monday through Saturday",
       },
       availableSlots: openSlots.map((s) => ({
         slotId: s.slot_id,
@@ -369,35 +377,37 @@ export function lookupPatientContext({ phone, patientId } = {}) {
       preferredName: "there",
       age: null,
       gender: null,
-      assignedDoctorId: defaultDoctor?.doctor_id || "DOC-1",
-      assignedDoctorName: defaultDoctor?.name || "Dr. Sneha Rao",
+      assignedDoctorId: defaultDoctor?.doctor_id || "DOC-MED",
+      assignedDoctorName: defaultDoctor?.name || "Dr. Sunita Kapoor",
+      assignedDoctorDepartment: defaultDoctor?.department || "General Medicine",
       medicalAlerts: [],
       insurancePlan: "Self-Pay / Not Recorded",
       preferredTimeOfDay: "Flexible",
-      generalNotes: "New caller or unindexed phone number",
+      generalNotes: "New hospital caller or unindexed phone number",
     },
     activeContext: {
       contextId: "CTX-NEW",
       callGoal: "NEW_PATIENT_INQUIRY",
-      callReason: "New patient consultation and appointment booking",
+      callReason: "New patient consultation and hospital appointment booking",
       lastVisit: {
         date: "None",
         procedure: "None on file",
         doctor: "N/A",
-        outcome: "First-time visitor to Brightside Dental",
+        outcome: "First-time visitor to Apex Multispecialty Hospital",
       },
       pendingAction:
-        "Introduce Brightside Dental, inquire about dental needs, collect full name, and book an appointment.",
+        "Introduce Apex Multispecialty Hospital, inquire about medical concern or desired department, collect full name, and book an appointment.",
       recommendedDurationMinutes: 30,
       urgency: "LOW",
     },
     doctor: {
-      doctorId: defaultDoctor?.doctor_id || "DOC-1",
-      name: defaultDoctor?.name || "Dr. Sneha Rao",
+      doctorId: defaultDoctor?.doctor_id || "DOC-MED",
+      name: defaultDoctor?.name || "Dr. Sunita Kapoor",
       specialty:
-        defaultDoctor?.specialty || "Senior Endodontist & General Dentist",
+        defaultDoctor?.specialty || "Consultant Physician & Diabetologist",
+      department: defaultDoctor?.department || "General Medicine",
       availableDays:
-        defaultDoctor?.available_days || "Monday through Friday",
+        defaultDoctor?.available_days || "Monday through Saturday",
     },
     availableSlots: openSlots.map((s) => ({
       slotId: s.slot_id,
@@ -447,6 +457,7 @@ export function getAvailableSlots({ doctorId, date } = {}) {
  */
 export function getAllSlotsWithBookingDetails({
   doctorId,
+  department,
   date,
   status = "ALL",
 } = {}) {
@@ -457,6 +468,7 @@ export function getAllSlotsWithBookingDetails({
       s.doctor_id AS doctorId,
       d.name AS doctorName,
       d.specialty AS doctorSpecialty,
+      d.department AS department,
       s.date,
       s.time,
       s.is_available AS isAvailable,
@@ -480,6 +492,11 @@ export function getAllSlotsWithBookingDetails({
     params.push(doctorId);
   }
 
+  if (department && department !== "ALL") {
+    query += " AND d.department = ?";
+    params.push(department);
+  }
+
   if (date) {
     query += " AND s.date = ?";
     params.push(date);
@@ -498,8 +515,9 @@ export function getAllSlotsWithBookingDetails({
     .map((row) => ({
       slotId: row.slotId,
       doctorId: row.doctorId,
-      doctorName: row.doctorName || "Clinic Doctor",
+      doctorName: row.doctorName || "Hospital Specialist",
       doctorSpecialty: row.doctorSpecialty || "",
+      department: row.department || "General Medicine",
       date: row.date,
       time: row.time,
       isAvailable: Boolean(row.isAvailable),
@@ -509,7 +527,7 @@ export function getAllSlotsWithBookingDetails({
             patientId: row.patientId,
             patientName: row.patientName || "Booked Patient",
             patientPhone: row.patientPhone || "",
-            treatmentType: row.treatmentType || "General Consultation",
+            treatmentType: row.treatmentType || "Clinical Consultation",
             status: row.appointmentStatus || "SCHEDULED",
             notes: row.appointmentNotes || "",
           }
@@ -523,6 +541,7 @@ export function getAllSlotsWithBookingDetails({
 export function bookAppointment({
   patientId,
   doctorId,
+  department,
   date,
   time,
   treatmentType,
@@ -531,16 +550,25 @@ export function bookAppointment({
   const db = getDb();
   const appointmentId = `APT-${Date.now().toString().slice(-6)}`;
 
+  let resolvedDepartment = department;
+  if (!resolvedDepartment && doctorId) {
+    const doc = db
+      .prepare("SELECT department FROM doctors WHERE doctor_id = ?")
+      .get(doctorId);
+    resolvedDepartment = doc?.department || "General Medicine";
+  }
+
   const tx = db.transaction(() => {
     // Insert the appointment
     db.prepare(`
       INSERT INTO appointments (
-        appointment_id, patient_id, doctor_id, date, time, treatment_type, status, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, 'SCHEDULED', ?)
+        appointment_id, patient_id, doctor_id, department, date, time, treatment_type, status, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SCHEDULED', ?)
     `).run(
       appointmentId,
       patientId,
-      doctorId || "DOC-1",
+      doctorId || "DOC-MED",
+      resolvedDepartment || "General Medicine",
       date,
       time,
       treatmentType || "General Consultation",
@@ -561,7 +589,8 @@ export function bookAppointment({
     success: true,
     appointmentId,
     patientId,
-    doctorId: doctorId || "DOC-1",
+    doctorId: doctorId || "DOC-MED",
+    department: resolvedDepartment || "General Medicine",
     date,
     time,
     treatmentType: treatmentType || "General Consultation",
@@ -613,6 +642,7 @@ export function getAllPatients() {
       p.*,
       d.name AS assigned_doctor_name,
       d.specialty AS assigned_doctor_specialty,
+      d.department AS assigned_doctor_department,
       ac.context_id,
       ac.call_goal,
       ac.call_reason,
@@ -650,6 +680,7 @@ export function getAllPatients() {
       assignedDoctorId: r.assigned_doctor_id,
       assignedDoctorName: r.assigned_doctor_name || "Unassigned",
       assignedDoctorSpecialty: r.assigned_doctor_specialty || "",
+      assignedDoctorDepartment: r.assigned_doctor_department || "General Medicine",
       medicalAlerts,
       insurancePlan: r.insurance_plan || "Standard Coverage",
       preferredTimeOfDay: r.preferred_time_of_day || "Morning",
@@ -683,25 +714,63 @@ export function getPatientById(patientId) {
 }
 
 /**
- * Returns all doctors with available slot and appointment counts.
+ * Returns all departments with active doctor counts and appointment counts.
  */
-export function getAllDoctors() {
+export function getAllDepartments() {
   const db = getDb();
-  return db.prepare(`
+  return db
+    .prepare(`
+      SELECT
+        d.department AS name,
+        COUNT(DISTINCT d.doctor_id) AS doctors_count,
+        (SELECT COUNT(*) FROM appointment_slots s JOIN doctors doc ON s.doctor_id = doc.doctor_id WHERE doc.department = d.department AND s.is_available = 1) AS available_slots_count,
+        (SELECT COUNT(*) FROM appointments a JOIN doctors doc ON a.doctor_id = doc.doctor_id WHERE doc.department = d.department) AS appointments_count
+      FROM doctors d
+      GROUP BY d.department
+      ORDER BY d.department ASC
+    `)
+    .all()
+    .map((dep) => ({
+      name: dep.name,
+      doctorsCount: dep.doctors_count || 0,
+      availableSlotsCount: dep.available_slots_count || 0,
+      appointmentsCount: dep.appointments_count || 0,
+    }));
+}
+
+/**
+ * Returns all doctors with available slot and appointment counts, optionally filtered by department.
+ */
+export function getAllDoctors({ department } = {}) {
+  const db = getDb();
+  let query = `
     SELECT
       d.*,
       (SELECT COUNT(*) FROM appointment_slots s WHERE s.doctor_id = d.doctor_id AND s.is_available = 1) AS available_slots_count,
       (SELECT COUNT(*) FROM appointments a WHERE a.doctor_id = d.doctor_id) AS booked_appointments_count
     FROM doctors d
-    ORDER BY d.name ASC
-  `).all().map((d) => ({
-    doctorId: d.doctor_id,
-    name: d.name,
-    specialty: d.specialty,
-    availableDays: d.available_days,
-    availableSlotsCount: d.available_slots_count || 0,
-    bookedAppointmentsCount: d.booked_appointments_count || 0,
-  }));
+  `;
+  const params = [];
+
+  if (department && department !== "ALL") {
+    query += " WHERE d.department = ?";
+    params.push(department);
+  }
+
+  query += " ORDER BY d.department ASC, d.name ASC";
+
+  return db
+    .prepare(query)
+    .all(...params)
+    .map((d) => ({
+      doctorId: d.doctor_id,
+      name: d.name,
+      specialty: d.specialty,
+      department: d.department || "General Medicine",
+      availableDays: d.available_days,
+      availableSlotsCount: d.available_slots_count || 0,
+      bookedAppointmentsCount: d.booked_appointments_count || 0,
+    }));
 }
 
 /**

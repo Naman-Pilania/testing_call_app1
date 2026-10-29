@@ -487,7 +487,7 @@ export function registerExotelMedia(server) {
                     {
                       name: "check_available_slots",
                       description:
-                        "Queries the clinic database in real time for currently open appointment slots for a specific date or doctor.",
+                        "Queries the hospital database in real time for currently open appointment slots for a specific date, doctor, or department.",
                       parameters: {
                         type: "OBJECT",
                         properties: {
@@ -497,7 +497,11 @@ export function registerExotelMedia(server) {
                           },
                           doctorId: {
                             type: "STRING",
-                            description: "Doctor ID e.g. DOC-1 (optional)",
+                            description: "Doctor ID e.g. DOC-CARD, DOC-ENT, DOC-EYE, DOC-LIV, DOC-DENT (optional)",
+                          },
+                          department: {
+                            type: "STRING",
+                            description: "Hospital department e.g. Cardiology, ENT, Ophthalmology, Hepatology, Dental, Orthopedics, General Medicine (optional)",
                           },
                         },
                       },
@@ -505,7 +509,7 @@ export function registerExotelMedia(server) {
                     {
                       name: "book_appointment",
                       description:
-                        "Books and confirms an appointment in the clinic database for the patient and reserves the slot. You MUST call this function when the patient agrees to an appointment date and time.",
+                        "Books and confirms an appointment in the hospital database for the patient and reserves the slot. You MUST call this function when the patient agrees to an appointment date and time.",
                       parameters: {
                         type: "OBJECT",
                         properties: {
@@ -515,7 +519,11 @@ export function registerExotelMedia(server) {
                           },
                           doctorId: {
                             type: "STRING",
-                            description: "Doctor ID e.g. DOC-1 (optional)",
+                            description: "Doctor ID e.g. DOC-CARD, DOC-ENT, DOC-EYE, DOC-LIV, DOC-DENT (optional)",
+                          },
+                          department: {
+                            type: "STRING",
+                            description: "Hospital department name e.g. Cardiology, ENT, Ophthalmology, Hepatology, Dental, Orthopedics (optional)",
                           },
                           date: {
                             type: "STRING",
@@ -528,11 +536,11 @@ export function registerExotelMedia(server) {
                           treatmentType: {
                             type: "STRING",
                             description:
-                              "Procedure or treatment name e.g. 'Permanent Crown Placement'",
+                              "Procedure or consultation name e.g. 'Post-Stent Cardiac Check', 'FESS Airway Inspection', 'Cataract Review'",
                           },
                           notes: {
                             type: "STRING",
-                            description: "Any special patient requests or notes",
+                            description: "Any special patient requests or clinical notes",
                           },
                         },
                         required: ["date", "time"],
@@ -713,7 +721,7 @@ export function registerExotelMedia(server) {
             console.log("Gemini requested check_available_slots:", call.args);
 
             const slots = getAvailableSlots({
-              doctorId: call.args?.doctorId || activeContext?.doctor.doctorId,
+              doctorId: call.args?.doctorId || (call.args?.department ? undefined : activeContext?.doctor.doctorId),
               date: call.args?.date,
             });
 
@@ -726,6 +734,7 @@ export function registerExotelMedia(server) {
                       output: {
                         success: true,
                         dateQueried: call.args?.date || "all upcoming",
+                        departmentQueried: call.args?.department || activeContext?.doctor.department || "All",
                         availableSlots: slots,
                         count: slots.length,
                         message:
@@ -747,7 +756,11 @@ export function registerExotelMedia(server) {
               const doctorIdToBook =
                 call.args?.doctorId ||
                 activeContext?.doctor.doctorId ||
-                "DOC-1";
+                "DOC-MED";
+              const departmentToBook =
+                call.args?.department ||
+                activeContext?.doctor.department ||
+                "General Medicine";
 
               let dateToBook = call.args?.date;
               let timeToBook = call.args?.time;
@@ -774,17 +787,18 @@ export function registerExotelMedia(server) {
               const treatmentTypeToBook =
                 call.args?.treatmentType ||
                 activeContext?.activeContext.pendingAction ||
-                "Follow-up Consultation";
+                "Clinical Follow-up Consultation";
 
               const booking = bookAppointment({
                 patientId: patientIdToBook,
                 doctorId: doctorIdToBook,
+                department: departmentToBook,
                 date: dateToBook,
                 time: timeToBook,
                 treatmentType: treatmentTypeToBook,
                 notes:
                   call.args?.notes ||
-                  "Booked by Maya AI voice assistant during live call",
+                  "Booked by Maya AI voice assistant during live hospital call",
               });
 
               console.log(

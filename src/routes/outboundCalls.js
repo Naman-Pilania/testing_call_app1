@@ -8,6 +8,7 @@ import {
   getAllPatients,
   getPatientById,
   getAllDoctors,
+  getAllDepartments,
   getAllCallLogs,
   getCallLogBySid,
   bookAppointment,
@@ -136,12 +137,27 @@ router.post("/api/patients", (req, res) => {
 });
 
 /**
- * GET /api/doctors
- * Returns all clinic doctors with availability and statistics.
+ * GET /api/departments
+ * Returns all hospital clinical departments with doctor and slot statistics.
  */
-router.get("/api/doctors", (_req, res) => {
+router.get("/api/departments", (_req, res) => {
   try {
-    const doctors = getAllDoctors();
+    const departments = getAllDepartments();
+    return res.json({ ok: true, count: departments.length, departments });
+  } catch (error) {
+    console.error("Failed to query departments:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/doctors
+ * Returns all hospital doctors with availability and statistics, optionally filtered by department.
+ */
+router.get("/api/doctors", (req, res) => {
+  try {
+    const { department } = req.query;
+    const doctors = getAllDoctors({ department });
     return res.json({ ok: true, count: doctors.length, doctors });
   } catch (error) {
     console.error("Failed to query doctors:", error.message);
@@ -183,17 +199,18 @@ router.get("/api/calls/:callSid", (req, res) => {
 /**
  * GET /api/slots
  * Returns appointment slots with rich availability and booking details.
- * Supports query params: doctorId, date, status ('ALL', 'AVAILABLE', 'BOOKED'), availableOnly ('true')
+ * Supports query params: doctorId, department, date, status ('ALL', 'AVAILABLE', 'BOOKED'), availableOnly ('true')
  */
 router.get("/api/slots", (req, res) => {
   try {
-    const { doctorId, date, status, availableOnly } = req.query;
+    const { doctorId, department, date, status, availableOnly } = req.query;
     if (availableOnly === "true") {
       const slots = getAvailableSlots({ doctorId, date });
       return res.json({ ok: true, count: slots.length, slots });
     }
     const slots = getAllSlotsWithBookingDetails({
       doctorId,
+      department,
       date,
       status: status || "ALL",
     });
@@ -206,14 +223,20 @@ router.get("/api/slots", (req, res) => {
 
 /**
  * GET /api/appointments
- * Returns all booked appointments.
+ * Returns all booked hospital appointments.
  */
 router.get("/api/appointments", (_req, res) => {
   try {
     const db = getDb();
     const appointments = db
       .prepare(`
-        SELECT a.*, p.full_name AS patient_name, p.phone AS patient_phone, d.name AS doctor_name
+        SELECT
+          a.*,
+          COALESCE(a.department, d.department, 'General Medicine') AS department,
+          p.full_name AS patient_name,
+          p.phone AS patient_phone,
+          d.name AS doctor_name,
+          d.specialty AS doctor_specialty
         FROM appointments a
         LEFT JOIN patients p ON a.patient_id = p.patient_id
         LEFT JOIN doctors d ON a.doctor_id = d.doctor_id
@@ -233,7 +256,7 @@ router.get("/api/appointments", (_req, res) => {
  */
 router.post("/api/appointments", (req, res) => {
   try {
-    const { patientId, doctorId, date, time, treatmentType, notes } =
+    const { patientId, doctorId, department, date, time, treatmentType, notes } =
       req.body ?? {};
     if (!patientId || !date || !time) {
       return res
@@ -244,6 +267,7 @@ router.post("/api/appointments", (req, res) => {
     const result = bookAppointment({
       patientId,
       doctorId,
+      department,
       date,
       time,
       treatmentType,

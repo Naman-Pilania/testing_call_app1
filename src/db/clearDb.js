@@ -3,7 +3,7 @@ import "dotenv/config";
 import { clearDb, closeDb } from "./database.js";
 
 console.log("==================================================");
-console.log("Brightside Dental Clinic - Resetting Database");
+console.log("Apex Multispecialty Hospital - Resetting Database");
 console.log("==================================================");
 
 try {
