@@ -256,8 +256,31 @@ router.get("/api/appointments", (_req, res) => {
  */
 router.post("/api/appointments", (req, res) => {
   try {
-    const { patientId, doctorId, department, date, time, treatmentType, notes } =
-      req.body ?? {};
+    let {
+      patientId,
+      doctorId,
+      department,
+      date,
+      time,
+      treatmentType,
+      procedureType,
+      notes,
+      slotId,
+    } = req.body ?? {};
+
+    // If slotId is provided, look up doctor, date, and time from appointment_slots table
+    if (slotId && (!date || !time || !doctorId)) {
+      const db = getDb();
+      const slot = db
+        .prepare("SELECT * FROM appointment_slots WHERE slot_id = ?")
+        .get(slotId);
+      if (slot) {
+        doctorId = doctorId || slot.doctor_id;
+        date = date || slot.date;
+        time = time || slot.time;
+      }
+    }
+
     if (!patientId || !date || !time) {
       return res
         .status(400)
@@ -270,7 +293,7 @@ router.post("/api/appointments", (req, res) => {
       department,
       date,
       time,
-      treatmentType,
+      treatmentType: treatmentType || procedureType || "Consultation",
       notes,
     });
 

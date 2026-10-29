@@ -38,7 +38,7 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: "32kb" }));
 
-app.get("/health", (_req, res) => {
+app.get(["/health", "/api/health"], (_req, res) => {
   res.json({
     ok: true,
     geminiConfigured: Boolean(process.env.GEMINI_API_KEY),

@@ -897,7 +897,7 @@ export function createPatient({
     const callGoal = activeContext.callGoal || "ROUTINE_FOLLOW_UP";
     const callReason =
       activeContext.callReason ||
-      "Routine dental checkup and appointment scheduling";
+      "Routine hospital checkup and clinical appointment scheduling";
     const pendingAction =
       activeContext.pendingAction ||
       "Check patient status and schedule next consultation slot.";

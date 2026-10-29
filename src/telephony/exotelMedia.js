@@ -142,7 +142,7 @@ export function registerExotelMedia(server) {
         process.env.TEST_PHONE_NUMBER ||
         "+918218627040";
       const finalReason =
-        activeContext?.activeContext?.callReason || "Outbound Dental Follow-up";
+        activeContext?.activeContext?.callReason || "Outbound Hospital Follow-up";
       const finalSid = callSid || `EXO-${Date.now()}`;
 
       console.log("[ExotelMedia] Finalizing and saving call log:", {
