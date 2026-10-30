@@ -683,6 +683,13 @@ export function saveCallLog({
       call_sid, phone, patient_id, call_reason, outcome, notes, transcript_summary, ended_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(call_sid) DO UPDATE SET
+      patient_id = CASE
+        WHEN excluded.patient_id IS NOT NULL AND excluded.patient_id NOT LIKE 'NEW%' THEN excluded.patient_id
+        WHEN call_logs.patient_id IS NULL OR call_logs.patient_id LIKE 'NEW%' THEN excluded.patient_id
+        ELSE call_logs.patient_id
+      END,
+      phone = COALESCE(excluded.phone, call_logs.phone),
+      call_reason = COALESCE(excluded.call_reason, call_logs.call_reason),
       outcome = excluded.outcome,
       notes = excluded.notes,
       transcript_summary = excluded.transcript_summary,
@@ -844,28 +851,52 @@ export function getAllDoctors({ department } = {}) {
  */
 export function getAllCallLogs() {
   const db = getDb();
-  return db.prepare(`
-    SELECT
-      c.*,
-      p.full_name AS patient_name,
-      p.preferred_name AS patient_preferred_name
-    FROM call_logs c
-    LEFT JOIN patients p ON (c.patient_id IS NOT NULL AND c.patient_id = p.patient_id)
-                         OR (c.patient_id IS NULL AND c.phone = p.phone)
-    ORDER BY c.started_at DESC
-  `).all().map((c) => ({
-    callSid: c.call_sid,
-    phone: c.phone,
-    patientId: c.patient_id,
-    patientName: c.patient_name || "Unknown Caller",
-    patientPreferredName: c.patient_preferred_name || "Caller",
-    callReason: c.call_reason || "Outbound Follow-up",
-    startedAt: c.started_at,
-    endedAt: c.ended_at,
-    outcome: c.outcome || "COMPLETED",
-    notes: c.notes || "",
-    transcriptSummary: c.transcript_summary || "",
-  }));
+  return db
+    .prepare(`
+      SELECT
+        c.*,
+        p.full_name AS patient_name,
+        p.preferred_name AS patient_preferred_name
+      FROM call_logs c
+      LEFT JOIN patients p ON (c.patient_id IS NOT NULL AND c.patient_id = p.patient_id)
+                           OR (c.patient_id IS NULL AND c.phone = p.phone)
+      ORDER BY c.started_at DESC
+    `)
+    .all()
+    .map((c) => {
+      let resolvedName = c.patient_name;
+      if (!resolvedName || resolvedName === "Valued Patient" || resolvedName === "Unknown Caller") {
+        const regMatch = c.notes?.match(/Registered new patient:\s*([A-Za-z ]+?)(?:\s*\([A-Z0-9-]+\)| -|$)/i);
+        const apptMatch = c.notes?.match(/Appointment .*? confirmed for .*? with .*? for ([A-Za-z ]+)/i);
+        const callMatch = c.notes?.match(/Call connected with ([A-Za-z ]+)/i);
+        if (regMatch?.[1]) {
+          resolvedName = regMatch[1].trim();
+        } else if (apptMatch?.[1]) {
+          resolvedName = apptMatch[1].trim();
+        } else if (
+          callMatch?.[1] &&
+          !callMatch[1].includes("Valued Patient") &&
+          !callMatch[1].includes("New Hospital Patient")
+        ) {
+          resolvedName = callMatch[1].trim();
+        }
+      }
+
+      return {
+        callSid: c.call_sid,
+        phone: c.phone,
+        patientId: c.patient_id,
+        patientName: resolvedName || "New Hospital Caller",
+        patientPreferredName:
+          c.patient_preferred_name || resolvedName?.split(" ")[0] || "Caller",
+        callReason: c.call_reason || "Outbound Follow-up",
+        startedAt: c.started_at,
+        endedAt: c.ended_at,
+        outcome: c.outcome || "COMPLETED",
+        notes: c.notes || "",
+        transcriptSummary: c.transcript_summary || "",
+      };
+    });
 }
 
 /**
@@ -873,28 +904,49 @@ export function getAllCallLogs() {
  */
 export function getCallLogBySid(callSid) {
   const db = getDb();
-  const c = db.prepare(`
-    SELECT
-      c.*,
-      p.full_name AS patient_name,
-      p.preferred_name AS patient_preferred_name,
-      p.assigned_doctor_id,
-      d.name AS doctor_name
-    FROM call_logs c
-    LEFT JOIN patients p ON (c.patient_id IS NOT NULL AND c.patient_id = p.patient_id)
-                         OR (c.patient_id IS NULL AND c.phone = p.phone)
-    LEFT JOIN doctors d ON p.assigned_doctor_id = d.doctor_id
-    WHERE c.call_sid = ?
-  `).get(callSid);
+  const c = db
+    .prepare(`
+      SELECT
+        c.*,
+        p.full_name AS patient_name,
+        p.preferred_name AS patient_preferred_name,
+        p.assigned_doctor_id,
+        d.name AS doctor_name
+      FROM call_logs c
+      LEFT JOIN patients p ON (c.patient_id IS NOT NULL AND c.patient_id = p.patient_id)
+                           OR (c.patient_id IS NULL AND c.phone = p.phone)
+      LEFT JOIN doctors d ON p.assigned_doctor_id = d.doctor_id
+      WHERE c.call_sid = ?
+    `)
+    .get(callSid);
 
   if (!c) return null;
+
+  let resolvedName = c.patient_name;
+  if (!resolvedName || resolvedName === "Valued Patient" || resolvedName === "Unknown Caller") {
+    const regMatch = c.notes?.match(/Registered new patient:\s*([A-Za-z ]+?)(?:\s*\([A-Z0-9-]+\)| -|$)/i);
+    const apptMatch = c.notes?.match(/Appointment .*? confirmed for .*? with .*? for ([A-Za-z ]+)/i);
+    const callMatch = c.notes?.match(/Call connected with ([A-Za-z ]+)/i);
+    if (regMatch?.[1]) {
+      resolvedName = regMatch[1].trim();
+    } else if (apptMatch?.[1]) {
+      resolvedName = apptMatch[1].trim();
+    } else if (
+      callMatch?.[1] &&
+      !callMatch[1].includes("Valued Patient") &&
+      !callMatch[1].includes("New Hospital Patient")
+    ) {
+      resolvedName = callMatch[1].trim();
+    }
+  }
 
   return {
     callSid: c.call_sid,
     phone: c.phone,
     patientId: c.patient_id,
-    patientName: c.patient_name || "Unknown Caller",
-    patientPreferredName: c.patient_preferred_name || "Caller",
+    patientName: resolvedName || "New Hospital Caller",
+    patientPreferredName:
+      c.patient_preferred_name || resolvedName?.split(" ")[0] || "Caller",
     doctorName: c.doctor_name || "Dr. Sneha Rao",
     callReason: c.call_reason || "Outbound Follow-up",
     startedAt: c.started_at,

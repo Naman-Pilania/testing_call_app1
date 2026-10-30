@@ -15,6 +15,7 @@ import {
   createPatient,
 } from "../db/database.js";
 import { registerPendingCall } from "../telephony/callRegistry.js";
+import { prewarmGeminiSession } from "../telephony/geminiPrewarm.js";
 
 const router = Router();
 
@@ -381,6 +382,19 @@ router.post("/api/calls", async (req, res) => {
       activeContext,
     });
 
+    // Pre-warm Gemini session immediately while the phone rings
+    // This eliminates initial silence when the caller answers!
+    let prewarmed = null;
+    try {
+      prewarmed = prewarmGeminiSession({
+        patientId: isNew ? "NEW" : activeContext.patient.patientId,
+        phone: dialNumber,
+        activeContext,
+      });
+    } catch (prewarmErr) {
+      console.warn("Could not prewarm Gemini session:", prewarmErr.message);
+    }
+
     const accountSid = requiredEnv("EXOTEL_ACCOUNT_SID");
     const apiKey = requiredEnv("EXOTEL_API_KEY");
     const apiToken = requiredEnv("EXOTEL_API_TOKEN");
@@ -464,6 +478,10 @@ router.post("/api/calls", async (req, res) => {
       phone: dialNumber,
       activeContext,
     });
+
+    if (prewarmed) {
+      prewarmed.setCallSid(callSid);
+    }
 
     return res.status(202).json({
       accepted: true,
