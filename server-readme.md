@@ -286,12 +286,13 @@ CREATE TABLE IF NOT EXISTS appointments (
 ```
 
 #### 6. `call_logs`
-Stores complete call history, metadata, and turn-by-turn dialogue transcripts.
+Stores complete call history, metadata, call direction, and turn-by-turn dialogue transcripts.
 ```sql
 CREATE TABLE IF NOT EXISTS call_logs (
   call_sid TEXT PRIMARY KEY,                -- Exotel Call SID
   phone TEXT NOT NULL,
   patient_id TEXT,
+  direction TEXT DEFAULT 'OUTBOUND',        -- 'OUTBOUND' or 'INBOUND'
   call_reason TEXT,
   started_at TEXT DEFAULT (datetime('now')),
   ended_at TEXT,
@@ -330,6 +331,16 @@ Exposes the complete backend API consumed by the admin client:
 | `GET` | `/api/calls/:callSid` | Returns detailed call log with turn-by-turn dialogue transcript |
 | `POST` | `/api/calls` | **Dispatches an outbound call**: Prewarms Gemini, registers session, calls Exotel |
 | `POST` | `/api/db/clear`, `/api/db/reset` | Resets and reseeds the SQLite database |
+
+### 5.2.1 Inbound Telephony Router (`src/routes/inboundCalls.js`)
+Dedicated endpoints managing incoming phone calls, Exotel webhook ingestion, caller intent registration, and live phone simulations:
+
+| HTTP Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/inbound/config` | Returns Exotel virtual helpline number, WebSocket streaming URL (`?direction=inbound`), and webhook setup guide |
+| `ALL` | `/api/inbound/webhook` | Handles Exotel Passthru applet webhooks; correlates incoming caller phone, pre-registers inbound call, and pre-warms Gemini session |
+| `POST` | `/api/inbound/simulate` | Interactive simulation endpoint; can dial `TEST_PHONE_NUMBER` via Exotel with `direction=inbound` for physical phone testing, or pre-warm pure software sessions |
+| `POST` | `/api/inbound/intent` | Pre-registers patient intent before dialing in, locking clinical context and reason in memory |
 
 ### 5.3 Call Identity & Session Registry (`src/telephony/callRegistry.js`)
 In testing and cellular deployments, telephony providers often strip custom URL query parameters from WebSockets, or multiple test patients share the same developer phone number (`TEST_PHONE_NUMBER`).

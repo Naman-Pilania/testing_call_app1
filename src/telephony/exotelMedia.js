@@ -149,14 +149,16 @@ export function registerExotelMedia(server) {
     let callSid = null;
     let inputRate = null;
 
-    // Extract query parameters attached by outbound router (if preserved by provider)
+    // Extract query parameters attached by router or telephony provider
     let targetPhone = null;
     let targetPatientId = null;
+    let queryDirection = null;
 
     try {
       const parsedUrl = new URL(req.url, "http://localhost");
-      targetPhone = parsedUrl.searchParams.get("phone");
+      targetPhone = parsedUrl.searchParams.get("phone") || parsedUrl.searchParams.get("From");
       targetPatientId = parsedUrl.searchParams.get("patientId");
+      queryDirection = parsedUrl.searchParams.get("direction");
     } catch {}
 
     // Active DB context for this specific phone call
@@ -242,8 +244,9 @@ export function registerExotelMedia(server) {
           callSid: callSid || `EXO-${Date.now()}`,
           phone,
           patientId: newPatient.patientId,
+          direction: activeContext?.direction || "INBOUND",
           callReason:
-            activeContext.activeContext?.callReason || "New Patient Call",
+            activeContext.activeContext?.callReason || (activeContext?.direction === "INBOUND" ? "Inbound Patient Call" : "Hospital Follow-up Call"),
           outcome: "IN_PROGRESS",
           notes: `Identified and registered caller: ${newPatient.fullName} (${newPatient.patientId})`,
         });
@@ -315,9 +318,10 @@ export function registerExotelMedia(server) {
         targetPhone ||
         process.env.TEST_PHONE_NUMBER ||
         "+918218627040";
+      const finalDirection = activeContext?.direction || "OUTBOUND";
       const finalReason =
         activeContext?.activeContext?.callReason ||
-        "Outbound Hospital Follow-up";
+        (finalDirection === "INBOUND" ? "Inbound Consultation Inquiry" : "Outbound Hospital Follow-up");
       const finalSid = callSid || `EXO-${Date.now()}`;
 
       // If still a generic or temporary patient ID, extract caller's name from transcript as fallback
@@ -366,6 +370,7 @@ export function registerExotelMedia(server) {
           callSid: finalSid,
           phone: finalPhone,
           patientId: finalPatientId,
+          direction: finalDirection,
           callReason: finalReason,
           outcome,
           notes,
@@ -1299,7 +1304,7 @@ export function registerExotelMedia(server) {
           streamSid =
             start.stream_sid || start.streamSid || message.stream_sid || null;
 
-          callSid = start.call_sid || start.callSid || `EXO-${Date.now()}`;
+          callSid = start.call_sid || start.callSid || message.call_sid || `EXO-${Date.now()}`;
 
           const customField =
             start.custom_field ||
@@ -1308,16 +1313,42 @@ export function registerExotelMedia(server) {
             message.customField ||
             null;
 
+          // Determine call direction
+          let detectedDirection = (queryDirection || start.direction || message.direction)?.toUpperCase();
+          if (!detectedDirection) {
+            if (customField && /inbound/i.test(customField)) {
+              detectedDirection = "INBOUND";
+            } else if (
+              start.from &&
+              start.to &&
+              process.env.EXOTEL_CALLER_ID &&
+              (start.to.includes(process.env.EXOTEL_CALLER_ID) || process.env.EXOTEL_CALLER_ID.includes(start.to))
+            ) {
+              detectedDirection = "INBOUND";
+            } else {
+              detectedDirection = "OUTBOUND";
+            }
+          }
+
+          const callerPhone =
+            (detectedDirection === "INBOUND" ? (start.from || targetPhone) : targetPhone) ||
+            targetPhone ||
+            start.from ||
+            process.env.TEST_PHONE_NUMBER;
+
           // Resolve the EXACT patient context using all available correlation signals:
           activeContext = resolveCallContext({
             callSid,
             customField,
             patientId: targetPatientId,
-            phone: targetPhone,
+            phone: callerPhone,
+            direction: detectedDirection,
           });
+          activeContext.direction = detectedDirection;
 
           console.log("[ExotelMedia] Active context resolved:", {
             callSid,
+            direction: detectedDirection,
             customField,
             patient: activeContext.patient.fullName,
             patientId: activeContext.patient.patientId,
@@ -1330,10 +1361,11 @@ export function registerExotelMedia(server) {
             callSid,
             phone: activeContext.patient.phone,
             patientId: activeContext.patient.patientId,
+            direction: detectedDirection,
             callReason: activeContext.activeContext.callReason,
             outcome: "IN_PROGRESS",
-            notes: `Call connected with ${activeContext.patient.fullName} (${activeContext.patient.patientId})`,
-            transcriptSummary: `[00:00] Maya (AI): Call connected with ${activeContext.patient.fullName}.`,
+            notes: `${detectedDirection === "INBOUND" ? "Inbound call answered" : "Call connected"} with ${activeContext.patient.fullName} (${activeContext.patient.patientId})`,
+            transcriptSummary: `[00:00] Maya (AI): ${detectedDirection === "INBOUND" ? "Inbound call answered" : "Call connected"} with ${activeContext.patient.fullName}.`,
           });
 
           const format =

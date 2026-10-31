@@ -4,6 +4,7 @@ import express from "express";
 import { createServer } from "node:http";
 
 import callsRouter from "./routes/outboundCalls.js";
+import inboundRouter from "./routes/inboundCalls.js";
 import { registerExotelMedia } from "./telephony/exotelMedia.js";
 import { getDb, clearDb } from "./db/database.js";
 
@@ -55,6 +56,7 @@ app.get(["/health", "/api/health"], (_req, res) => {
 });
 
 app.use(callsRouter);
+app.use(inboundRouter);
 
 registerExotelMedia(server);
 

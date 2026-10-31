@@ -444,6 +444,7 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
       call_sid: "EXO-CALL-901121",
       phone: testPhone,
       patient_id: "PAT-1042",
+      direction: "OUTBOUND",
       call_reason:
         "Post-angioplasty recovery check & scheduling cardiac stress echo",
       started_at: "2026-10-27 10:30:00",
@@ -467,6 +468,7 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
       call_sid: "EXO-CALL-901122",
       phone: testPhone,
       patient_id: "PAT-2002",
+      direction: "OUTBOUND",
       call_reason:
         "Post-op FESS sinus recovery assessment & cavity inspection booking",
       started_at: "2026-10-28 11:15:00",
@@ -489,6 +491,7 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
       call_sid: "EXO-CALL-901123",
       phone: testPhone,
       patient_id: "PAT-1088",
+      direction: "OUTBOUND",
       call_reason:
         "2-week post-cataract surgery visual acuity and eye drop adherence check",
       started_at: "2026-10-28 15:00:00",
@@ -503,6 +506,47 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
 [00:24] Maya (AI): That's typical during the initial weeks. Dr. Iyer has an opening tomorrow at 09:30 AM for your pressure check.
 [00:32] Patient: I am out of town until Friday evening. Could you call me back on Saturday?
 [00:38] Maya (AI): Certainly, Priya. I have scheduled a callback for Saturday morning. Please continue your protective sunglasses outdoors. Take care!`,
+    },
+    {
+      call_sid: "EXO-INB-901124",
+      phone: testPhone,
+      patient_id: "PAT-3002",
+      direction: "INBOUND",
+      call_reason:
+        "Inbound inquiry regarding post-root canal crown fitting and tooth sensitivity",
+      started_at: "2026-10-29 14:10:00",
+      ended_at: "2026-10-29 14:13:30",
+      outcome: "APPOINTMENT_SCHEDULED",
+      notes:
+        "Patient called hospital reception inquiring about minor sensitivity following root canal. Maya welcomed caller, reviewed dental history with Dr. Sneha Rao, and booked permanent zirconia crown evaluation for tomorrow at 11:30 AM.",
+      transcript_summary: `[00:01] Maya (AI): Thank you for calling Apex Multispecialty Hospital. This is Maya, how may I help you today?
+[00:06] Patient: Hi Maya, this is Sunita Patel. I had a root canal with Dr. Sneha Rao recently and wanted to check about booking my permanent crown fitting.
+[00:15] Maya (AI): Hello Sunita! Great to hear from you. Dr. Rao has open slots tomorrow at 11:30 AM or at 03:00 PM in our Dental Department. Which time suits you best?
+[00:25] Patient: Tomorrow at 11:30 AM would be great.
+[00:28] Maya (AI): Wonderful! One moment please, locking in your appointment right now... I have confirmed your appointment for tomorrow at 11:30 AM with Dr. Sneha Rao in Dental Suite 2.
+[00:38] Patient: Thanks so much Maya, appreciate the quick booking!
+[00:41] Maya (AI): You are very welcome, Sunita. Have a wonderful day! Goodbye.`,
+    },
+    {
+      call_sid: "EXO-INB-901125",
+      phone: testPhone,
+      patient_id: "PAT-4001",
+      direction: "INBOUND",
+      call_reason:
+        "Inbound new patient consultation inquiry for cardiology evaluation",
+      started_at: "2026-10-30 09:20:00",
+      ended_at: "2026-10-30 09:23:45",
+      outcome: "APPOINTMENT_SCHEDULED",
+      notes:
+        "New caller dialed into hospital care line. Introduced himself as Amit Shah. Maya registered new patient profile and scheduled first-time cardiology consultation with Dr. Rajesh Sharma for tomorrow at 09:30 AM.",
+      transcript_summary: `[00:01] Maya (AI): Thank you for calling Apex Multispecialty Hospital. My name is Maya. How may I assist you today?
+[00:07] Patient: Hello, my name is Amit Shah. I've been having mild breathlessness while climbing stairs and wanted to see a heart specialist.
+[00:16] Maya (AI): Hello Amit! Please wait just a moment while I register you in our hospital system... Let me check Dr. Rajesh Sharma's schedule in Cardiology for you.
+[00:27] Maya (AI): Dr. Rajesh Sharma has open slots tomorrow morning at 09:30 AM or at 02:00 PM.
+[00:34] Patient: 09:30 AM tomorrow works best for me.
+[00:37] Maya (AI): One moment please, locking in your appointment right now... Excellent Amit, I have booked your cardiology consultation with Dr. Rajesh Sharma for tomorrow at 09:30 AM.
+[00:48] Patient: Thank you very much Maya!
+[00:50] Maya (AI): You are welcome, Amit. Please report to the reception desk 10 minutes early. Take care and goodbye!`,
     },
   ];
 

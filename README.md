@@ -25,7 +25,7 @@ A full-duplex, real-time conversational AI phone calling and admin dashboard sys
 ## Product Overview
 
 * **Use Case**: Automated patient care navigator and appointment booking assistant (**"Maya"**) for **Apex Multispecialty Hospital**.
-* **Role**: Conducts outbound phone calls to patients following hospital visits, surgical procedures, or routine checkups. Before dialing, the system **looks up the patient's active medical history, last visit details, pending clinical actions, and doctor's schedule from SQLite**, then dynamically customizes Maya's personality, greeting, clinical context, and available appointment openings.
+* **Role**: Conducts both outbound follow-up calls to patients and answers inbound phone calls from patients and new callers. Before dialing or upon answering, the system **looks up the patient's active medical history, last visit details, pending clinical actions, and doctor's schedule from SQLite**, then dynamically customizes Maya's personality, greeting, clinical context, and available appointment openings.
 * **Telephony Provider**: [Exotel](https://exotel.com) (Connect Voice AI bidirectional streaming over WebSockets).
 * **AI Engine**: Google Gemini Multimodal Live API (`gemini-3.1-flash-live-preview`) using WebSocket bidirectional streaming with synthetic voice output (`Puck` / `Vega`).
 * **Database**: Local SQLite database with Write-Ahead Logging (`WAL`) mode, storing patients, clinical contexts, doctors, live appointment slots, confirmed bookings, and turn-by-turn dialogue transcripts.
@@ -35,8 +35,8 @@ A full-duplex, real-time conversational AI phone calling and admin dashboard sys
 
 ## Key Features
 
-1. **Multispecialty Care Coordination**:
-   Full support across 7 medical departments: Cardiology, Ophthalmology, ENT, Hepatology, Dental & Maxillofacial, Orthopedics, and General Medicine.
+1. **Multispecialty Care Coordination & Dual-Direction Telephony**:
+   Full support for both **Outbound Care Coordination** and **Inbound Patient Navigation** across 7 medical departments: Cardiology, Ophthalmology, ENT, Hepatology, Dental & Maxillofacial, Orthopedics, and General Medicine. Inbound callers are greeted warmly, recognized from clinical records, and auto-registered upon spoken self-introduction.
 2. **Zero-Latency Pre-Warming Engine**:
    Pre-warms the Gemini WebSocket connection and pre-synthesizes greeting audio while the patient's phone is ringing, eliminating initial silence when the user answers.
 3. **Conversational Audio Fillers**:

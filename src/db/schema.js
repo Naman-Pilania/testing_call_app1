@@ -116,6 +116,7 @@ export const SQL_SCHEMA = `
     call_sid TEXT PRIMARY KEY,
     phone TEXT NOT NULL,
     patient_id TEXT,
+    direction TEXT DEFAULT 'OUTBOUND', -- 'OUTBOUND' or 'INBOUND'
     call_reason TEXT,
     started_at TEXT DEFAULT (datetime('now')),
     ended_at TEXT,

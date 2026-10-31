@@ -384,6 +384,7 @@ router.post("/api/calls", async (req, res) => {
     registerPendingCall(null, {
       patientId: isNew ? "NEW" : activeContext.patient.patientId,
       phone: dialNumber,
+      direction: "OUTBOUND",
       activeContext,
     });
 
@@ -394,6 +395,7 @@ router.post("/api/calls", async (req, res) => {
       prewarmed = prewarmGeminiSession({
         patientId: isNew ? "NEW" : activeContext.patient.patientId,
         phone: dialNumber,
+        direction: "OUTBOUND",
         activeContext,
       });
     } catch (prewarmErr) {
@@ -483,6 +485,7 @@ router.post("/api/calls", async (req, res) => {
     registerPendingCall(callSid, {
       patientId: activeContext.patient.patientId,
       phone: dialNumber,
+      direction: "OUTBOUND",
       activeContext,
     });
 

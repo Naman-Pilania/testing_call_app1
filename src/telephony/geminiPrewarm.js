@@ -23,6 +23,7 @@ export function prewarmGeminiSession({
   callSid = null,
   patientId = null,
   phone = null,
+  direction = "OUTBOUND",
   activeContext,
 }) {
   const key = process.env.GEMINI_API_KEY;
@@ -39,6 +40,10 @@ export function prewarmGeminiSession({
       "[GeminiPrewarm] Cannot prewarm session: activeContext is missing",
     );
     return null;
+  }
+
+  if (direction && activeContext) {
+    activeContext.direction = direction;
   }
 
   const url = new URL(
@@ -68,6 +73,7 @@ export function prewarmGeminiSession({
     callSid: callSid || null,
     patientId: patientId || activeContext?.patient?.patientId || null,
     phone: phone || activeContext?.patient?.phone || null,
+    direction: direction || activeContext?.direction || "OUTBOUND",
     activeContext,
     dynamicPrompt,
     initialGreeting,

@@ -51,6 +51,18 @@ export function getDb() {
   // Apply Schema
   db.exec(SQL_SCHEMA);
 
+  // Auto-migration: ensure direction column exists in call_logs table
+  try {
+    const tableInfo = db.pragma("table_info(call_logs)");
+    const hasDirection = tableInfo.some((col) => col.name === "direction");
+    if (!hasDirection) {
+      db.exec("ALTER TABLE call_logs ADD COLUMN direction TEXT DEFAULT 'OUTBOUND'");
+      console.log("[DB] Migrated call_logs table: added 'direction' column.");
+    }
+  } catch (err) {
+    console.warn("[DB] Migration check for call_logs.direction:", err.message);
+  }
+
   // Seed Data if empty
   seedIfEmpty(db);
 
@@ -93,8 +105,8 @@ export function seedDatabase(db = getRawDb()) {
 
   const insertCallLog = db.prepare(`
     INSERT INTO call_logs (
-      call_sid, phone, patient_id, call_reason, started_at, ended_at, outcome, notes, transcript_summary
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      call_sid, phone, patient_id, direction, call_reason, started_at, ended_at, outcome, notes, transcript_summary
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const seedTx = db.transaction(() => {
@@ -147,6 +159,7 @@ export function seedDatabase(db = getRawDb()) {
           log.call_sid,
           log.phone,
           log.patient_id,
+          log.direction || "OUTBOUND",
           log.call_reason,
           log.started_at,
           log.ended_at,
@@ -690,6 +703,7 @@ export function saveCallLog({
   callSid,
   phone,
   patientId,
+  direction = "OUTBOUND",
   callReason,
   outcome,
   notes = "",
@@ -700,14 +714,15 @@ export function saveCallLog({
   db.prepare(
     `
     INSERT INTO call_logs (
-      call_sid, phone, patient_id, call_reason, outcome, notes, transcript_summary, ended_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      call_sid, phone, patient_id, direction, call_reason, outcome, notes, transcript_summary, ended_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(call_sid) DO UPDATE SET
       patient_id = CASE
         WHEN excluded.patient_id IS NOT NULL AND excluded.patient_id NOT LIKE 'NEW%' THEN excluded.patient_id
         WHEN call_logs.patient_id IS NULL OR call_logs.patient_id LIKE 'NEW%' THEN excluded.patient_id
         ELSE call_logs.patient_id
       END,
+      direction = COALESCE(excluded.direction, call_logs.direction),
       phone = COALESCE(excluded.phone, call_logs.phone),
       call_reason = COALESCE(excluded.call_reason, call_logs.call_reason),
       outcome = excluded.outcome,
@@ -719,6 +734,7 @@ export function saveCallLog({
     callSid,
     phone,
     patientId || null,
+    direction || "OUTBOUND",
     callReason || null,
     outcome || "COMPLETED",
     notes,
@@ -909,8 +925,13 @@ export function getAllCallLogs() {
           /Appointment .*? confirmed for .*? with .*? for ([A-Za-z ]+)/i,
         );
         const callMatch = c.notes?.match(/Call connected with ([A-Za-z ]+)/i);
+        const introMatch =
+          c.notes?.match(/Introduced himself as ([A-Za-z ]+?)(?:\.|$)/i) ||
+          c.notes?.match(/Identified and registered caller:\s*([A-Za-z ]+?)(?:\s*\(|$)/i);
         if (regMatch?.[1]) {
           resolvedName = regMatch[1].trim();
+        } else if (introMatch?.[1]) {
+          resolvedName = introMatch[1].trim();
         } else if (apptMatch?.[1]) {
           resolvedName = apptMatch[1].trim();
         } else if (
@@ -926,10 +947,11 @@ export function getAllCallLogs() {
         callSid: c.call_sid,
         phone: c.phone,
         patientId: c.patient_id,
+        direction: c.direction || "OUTBOUND",
         patientName: resolvedName || "New Hospital Caller",
         patientPreferredName:
           c.patient_preferred_name || resolvedName?.split(" ")[0] || "Caller",
-        callReason: c.call_reason || "Outbound Follow-up",
+        callReason: c.call_reason || (c.direction === "INBOUND" ? "Inbound Consultation Inquiry" : "Outbound Follow-up"),
         startedAt: c.started_at,
         endedAt: c.ended_at,
         outcome: c.outcome || "COMPLETED",
@@ -977,8 +999,13 @@ export function getCallLogBySid(callSid) {
       /Appointment .*? confirmed for .*? with .*? for ([A-Za-z ]+)/i,
     );
     const callMatch = c.notes?.match(/Call connected with ([A-Za-z ]+)/i);
+    const introMatch =
+      c.notes?.match(/Introduced himself as ([A-Za-z ]+?)(?:\.|$)/i) ||
+      c.notes?.match(/Identified and registered caller:\s*([A-Za-z ]+?)(?:\s*\(|$)/i);
     if (regMatch?.[1]) {
       resolvedName = regMatch[1].trim();
+    } else if (introMatch?.[1]) {
+      resolvedName = introMatch[1].trim();
     } else if (apptMatch?.[1]) {
       resolvedName = apptMatch[1].trim();
     } else if (
@@ -994,11 +1021,12 @@ export function getCallLogBySid(callSid) {
     callSid: c.call_sid,
     phone: c.phone,
     patientId: c.patient_id,
+    direction: c.direction || "OUTBOUND",
     patientName: resolvedName || "New Hospital Caller",
     patientPreferredName:
       c.patient_preferred_name || resolvedName?.split(" ")[0] || "Caller",
     doctorName: c.doctor_name || "Dr. Sneha Rao",
-    callReason: c.call_reason || "Outbound Follow-up",
+    callReason: c.call_reason || (c.direction === "INBOUND" ? "Inbound Consultation Inquiry" : "Outbound Follow-up"),
     startedAt: c.started_at,
     endedAt: c.ended_at,
     outcome: c.outcome || "COMPLETED",
