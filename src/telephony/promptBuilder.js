@@ -84,8 +84,8 @@ ${slotsDescription}
      Parameters to pass:
        • patientId: "${patient.patientId}"
        • doctorId: "${doctor.doctorId}"
-       • date: exact slot date in YYYY-MM-DD format (e.g. "${availableSlots[0]?.date || '2026-10-30'}")
-       • time: exact slot time (e.g. "${availableSlots[0]?.time || '10:00 AM'}")
+       • date: exact slot date in YYYY-MM-DD format (e.g. "${availableSlots[0]?.date || "2026-10-30"}")
+       • time: exact slot time (e.g. "${availableSlots[0]?.time || "10:00 AM"}")
        • treatmentType: "${activeContext.pendingAction}"
        • notes: notes from patient or recovery status
    - DO NOT just say you booked it without calling 'book_appointment'! You MUST call the function.
@@ -140,7 +140,11 @@ ${END_RULES}
 export function buildInitialGreetingPrompt(context) {
   const { patient, activeContext, doctor, isKnownPatient } = context;
 
-  if (isKnownPatient && patient.preferredName && patient.preferredName !== "there") {
+  if (
+    isKnownPatient &&
+    patient.preferredName &&
+    patient.preferredName !== "there"
+  ) {
     const dept = doctor.department || "Specialist Care";
     return (
       `The phone call has just connected with ${patient.preferredName}. ` +

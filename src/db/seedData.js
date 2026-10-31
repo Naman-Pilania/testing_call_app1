@@ -173,9 +173,7 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
       age: 32,
       gender: "Male",
       assigned_doctor_id: "DOC-ORTHO",
-      medical_alerts: JSON.stringify([
-        "Post-ACL Reconstruction (Right Knee)",
-      ]),
+      medical_alerts: JSON.stringify(["Post-ACL Reconstruction (Right Knee)"]),
       insurance_plan: "SportsShield Active Ortho",
       preferred_time_of_day: "Afternoon",
       general_notes:
@@ -208,7 +206,8 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
       call_reason:
         "Post-op FESS sinus recovery assessment, nasal breathing evaluation, and cavity debridement booking",
       last_visit_date: "2026-10-18",
-      last_visit_procedure: "Functional Endoscopic Sinus Surgery (FESS) & Septoplasty",
+      last_visit_procedure:
+        "Functional Endoscopic Sinus Surgery (FESS) & Septoplasty",
       last_visit_doctor: "Dr. Farhan Al-Mansoor",
       last_visit_outcome:
         "Bilateral ethmoidectomy and maxillary antrostomy completed without hemorrhage. Airway patent.",
@@ -225,7 +224,8 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
       call_reason:
         "2-week post-cataract surgery visual acuity check, eye drop compliance, and IOP evaluation",
       last_visit_date: "2026-10-15",
-      last_visit_procedure: "Left Eye Micro-Incision Phacoemulsification with IOL",
+      last_visit_procedure:
+        "Left Eye Micro-Incision Phacoemulsification with IOL",
       last_visit_doctor: "Dr. Ananya Iyer",
       last_visit_outcome:
         "Clear cornea, well-centered acrylic foldable intraocular lens, IOP 14 mmHg.",
@@ -242,7 +242,8 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
       call_reason:
         "Fatty liver grade II staging review, liver enzyme monitoring, and FibroScan consultation",
       last_visit_date: "2026-10-20",
-      last_visit_procedure: "Comprehensive Liver Function Panel & Abdominal Ultrasound",
+      last_visit_procedure:
+        "Comprehensive Liver Function Panel & Abdominal Ultrasound",
       last_visit_doctor: "Dr. Priya Mukherjee",
       last_visit_outcome:
         "Moderate diffuse hepatic steatosis confirmed. Serum ALT 68 U/L, AST 54 U/L. Recommended FibroScan.",
@@ -276,7 +277,8 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
       call_reason:
         "4-week knee rehabilitation milestone review, weight-bearing assessment, and physical therapy clearance",
       last_visit_date: "2026-10-01",
-      last_visit_procedure: "Arthroscopic ACL Reconstruction with Hamstring Autograft",
+      last_visit_procedure:
+        "Arthroscopic ACL Reconstruction with Hamstring Autograft",
       last_visit_doctor: "Dr. Arun Verma",
       last_visit_outcome:
         "Stable Lachman test, surgical incisions healed cleanly, full extension achieved.",
@@ -290,37 +292,151 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
 
   const appointmentSlots = [
     // Cardiology (Dr. Rajesh Sharma)
-    { slot_id: "SLOT-CARD-1", doctor_id: "DOC-CARD", date: tomorrow, time: "10:00 AM", is_available: 1 },
-    { slot_id: "SLOT-CARD-2", doctor_id: "DOC-CARD", date: tomorrow, time: "02:30 PM", is_available: 1 },
-    { slot_id: "SLOT-CARD-3", doctor_id: "DOC-CARD", date: dayAfter, time: "11:30 AM", is_available: 1 },
+    {
+      slot_id: "SLOT-CARD-1",
+      doctor_id: "DOC-CARD",
+      date: tomorrow,
+      time: "10:00 AM",
+      is_available: 1,
+    },
+    {
+      slot_id: "SLOT-CARD-2",
+      doctor_id: "DOC-CARD",
+      date: tomorrow,
+      time: "02:30 PM",
+      is_available: 1,
+    },
+    {
+      slot_id: "SLOT-CARD-3",
+      doctor_id: "DOC-CARD",
+      date: dayAfter,
+      time: "11:30 AM",
+      is_available: 1,
+    },
 
     // ENT (Dr. Farhan Al-Mansoor)
-    { slot_id: "SLOT-ENT-1", doctor_id: "DOC-ENT", date: tomorrow, time: "11:00 AM", is_available: 1 },
-    { slot_id: "SLOT-ENT-2", doctor_id: "DOC-ENT", date: tomorrow, time: "03:30 PM", is_available: 1 },
-    { slot_id: "SLOT-ENT-3", doctor_id: "DOC-ENT", date: dayAfter, time: "10:00 AM", is_available: 1 },
+    {
+      slot_id: "SLOT-ENT-1",
+      doctor_id: "DOC-ENT",
+      date: tomorrow,
+      time: "11:00 AM",
+      is_available: 1,
+    },
+    {
+      slot_id: "SLOT-ENT-2",
+      doctor_id: "DOC-ENT",
+      date: tomorrow,
+      time: "03:30 PM",
+      is_available: 1,
+    },
+    {
+      slot_id: "SLOT-ENT-3",
+      doctor_id: "DOC-ENT",
+      date: dayAfter,
+      time: "10:00 AM",
+      is_available: 1,
+    },
 
     // Ophthalmology (Dr. Ananya Iyer)
-    { slot_id: "SLOT-EYE-1", doctor_id: "DOC-EYE", date: tomorrow, time: "09:30 AM", is_available: 1 },
-    { slot_id: "SLOT-EYE-2", doctor_id: "DOC-EYE", date: tomorrow, time: "04:00 PM", is_available: 1 },
-    { slot_id: "SLOT-EYE-3", doctor_id: "DOC-EYE", date: dayAfter, time: "02:00 PM", is_available: 1 },
+    {
+      slot_id: "SLOT-EYE-1",
+      doctor_id: "DOC-EYE",
+      date: tomorrow,
+      time: "09:30 AM",
+      is_available: 1,
+    },
+    {
+      slot_id: "SLOT-EYE-2",
+      doctor_id: "DOC-EYE",
+      date: tomorrow,
+      time: "04:00 PM",
+      is_available: 1,
+    },
+    {
+      slot_id: "SLOT-EYE-3",
+      doctor_id: "DOC-EYE",
+      date: dayAfter,
+      time: "02:00 PM",
+      is_available: 1,
+    },
 
     // Hepatology (Dr. Priya Mukherjee)
-    { slot_id: "SLOT-LIV-1", doctor_id: "DOC-LIV", date: tomorrow, time: "11:30 AM", is_available: 1 },
-    { slot_id: "SLOT-LIV-2", doctor_id: "DOC-LIV", date: tomorrow, time: "03:00 PM", is_available: 1 },
-    { slot_id: "SLOT-LIV-3", doctor_id: "DOC-LIV", date: dayAfter, time: "04:00 PM", is_available: 1 },
+    {
+      slot_id: "SLOT-LIV-1",
+      doctor_id: "DOC-LIV",
+      date: tomorrow,
+      time: "11:30 AM",
+      is_available: 1,
+    },
+    {
+      slot_id: "SLOT-LIV-2",
+      doctor_id: "DOC-LIV",
+      date: tomorrow,
+      time: "03:00 PM",
+      is_available: 1,
+    },
+    {
+      slot_id: "SLOT-LIV-3",
+      doctor_id: "DOC-LIV",
+      date: dayAfter,
+      time: "04:00 PM",
+      is_available: 1,
+    },
 
     // Dental (Dr. Sneha Rao)
-    { slot_id: "SLOT-DENT-1", doctor_id: "DOC-DENT", date: tomorrow, time: "10:00 AM", is_available: 1 },
-    { slot_id: "SLOT-DENT-2", doctor_id: "DOC-DENT", date: tomorrow, time: "02:00 PM", is_available: 1 },
-    { slot_id: "SLOT-DENT-3", doctor_id: "DOC-DENT", date: dayAfter, time: "09:30 AM", is_available: 1 },
+    {
+      slot_id: "SLOT-DENT-1",
+      doctor_id: "DOC-DENT",
+      date: tomorrow,
+      time: "10:00 AM",
+      is_available: 1,
+    },
+    {
+      slot_id: "SLOT-DENT-2",
+      doctor_id: "DOC-DENT",
+      date: tomorrow,
+      time: "02:00 PM",
+      is_available: 1,
+    },
+    {
+      slot_id: "SLOT-DENT-3",
+      doctor_id: "DOC-DENT",
+      date: dayAfter,
+      time: "09:30 AM",
+      is_available: 1,
+    },
 
     // Orthopedics (Dr. Arun Verma)
-    { slot_id: "SLOT-ORTHO-1", doctor_id: "DOC-ORTHO", date: tomorrow, time: "01:30 PM", is_available: 1 },
-    { slot_id: "SLOT-ORTHO-2", doctor_id: "DOC-ORTHO", date: dayAfter, time: "10:30 AM", is_available: 1 },
+    {
+      slot_id: "SLOT-ORTHO-1",
+      doctor_id: "DOC-ORTHO",
+      date: tomorrow,
+      time: "01:30 PM",
+      is_available: 1,
+    },
+    {
+      slot_id: "SLOT-ORTHO-2",
+      doctor_id: "DOC-ORTHO",
+      date: dayAfter,
+      time: "10:30 AM",
+      is_available: 1,
+    },
 
     // General Medicine (Dr. Sunita Kapoor)
-    { slot_id: "SLOT-MED-1", doctor_id: "DOC-MED", date: tomorrow, time: "12:00 PM", is_available: 1 },
-    { slot_id: "SLOT-MED-2", doctor_id: "DOC-MED", date: dayAfter, time: "03:00 PM", is_available: 1 },
+    {
+      slot_id: "SLOT-MED-1",
+      doctor_id: "DOC-MED",
+      date: tomorrow,
+      time: "12:00 PM",
+      is_available: 1,
+    },
+    {
+      slot_id: "SLOT-MED-2",
+      doctor_id: "DOC-MED",
+      date: dayAfter,
+      time: "03:00 PM",
+      is_available: 1,
+    },
   ];
 
   const callLogs = [
@@ -328,11 +444,13 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
       call_sid: "EXO-CALL-901121",
       phone: testPhone,
       patient_id: "PAT-1042",
-      call_reason: "Post-angioplasty recovery check & scheduling cardiac stress echo",
+      call_reason:
+        "Post-angioplasty recovery check & scheduling cardiac stress echo",
       started_at: "2026-10-27 10:30:00",
       ended_at: "2026-10-27 10:34:20",
       outcome: "APPOINTMENT_SCHEDULED",
-      notes: "Surender reported feeling much better with zero chest discomfort. Confirmed daily adherence to Ecosprin and Ticagrelor. Scheduled 30-day cardiac follow-up with Dr. Rajesh Sharma for tomorrow at 10:00 AM.",
+      notes:
+        "Surender reported feeling much better with zero chest discomfort. Confirmed daily adherence to Ecosprin and Ticagrelor. Scheduled 30-day cardiac follow-up with Dr. Rajesh Sharma for tomorrow at 10:00 AM.",
       transcript_summary: `[00:02] Maya (AI): Hello! Am I speaking with Surender?
 [00:05] Patient: Yes, this is Surender speaking.
 [00:08] Maya (AI): Hello Surender! This is Maya calling from Apex Multispecialty Hospital on behalf of Dr. Rajesh Sharma from our Cardiology Department. I'm checking in following your coronary stent placement. How are you feeling today?
@@ -343,17 +461,19 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
 [00:52] Patient: Tomorrow at 10:00 AM suits me very well.
 [00:56] Maya (AI): Perfect! I have reserved tomorrow, 10:00 AM with Dr. Rajesh Sharma in Cardiology. You'll receive an SMS confirmation. Take care, Surender!
 [01:05] Patient: Thank you Maya, goodbye!
-[01:08] Maya (AI): Goodbye!`
+[01:08] Maya (AI): Goodbye!`,
     },
     {
       call_sid: "EXO-CALL-901122",
       phone: testPhone,
       patient_id: "PAT-2002",
-      call_reason: "Post-op FESS sinus recovery assessment & cavity inspection booking",
+      call_reason:
+        "Post-op FESS sinus recovery assessment & cavity inspection booking",
       started_at: "2026-10-28 11:15:00",
       ended_at: "2026-10-28 11:18:45",
       outcome: "APPOINTMENT_SCHEDULED",
-      notes: "Naman reported clear nasal breathing with minimal congestion. Continuing saline rinses. Scheduled post-op airway examination with Dr. Farhan Al-Mansoor for tomorrow at 11:00 AM.",
+      notes:
+        "Naman reported clear nasal breathing with minimal congestion. Continuing saline rinses. Scheduled post-op airway examination with Dr. Farhan Al-Mansoor for tomorrow at 11:00 AM.",
       transcript_summary: `[00:02] Maya (AI): Good morning! May I speak with Naman?
 [00:05] Patient: Yes, Naman here.
 [00:07] Maya (AI): Hi Naman! This is Maya from Apex Multispecialty Hospital calling on behalf of Dr. Farhan Al-Mansoor in the ENT Department. I'm following up on your recent endoscopic sinus surgery. How has your breathing been?
@@ -363,24 +483,26 @@ export function getSeedData(configuredTestPhone = "+918218627040") {
 [00:31] Maya (AI): Great. Dr. Al-Mansoor needs to perform your routine post-op cavity inspection to ensure proper healing. We have an opening tomorrow at 11:00 AM or in the afternoon at 03:30 PM.
 [00:43] Patient: Let's do tomorrow at 11:00 AM please.
 [00:46] Maya (AI): Done! Your appointment is confirmed for tomorrow at 11:00 AM with Dr. Farhan Al-Mansoor in ENT Suite 3. Have a pleasant day!
-[00:54] Patient: Thanks Maya, bye.`
+[00:54] Patient: Thanks Maya, bye.`,
     },
     {
       call_sid: "EXO-CALL-901123",
       phone: testPhone,
       patient_id: "PAT-1088",
-      call_reason: "2-week post-cataract surgery visual acuity and eye drop adherence check",
+      call_reason:
+        "2-week post-cataract surgery visual acuity and eye drop adherence check",
       started_at: "2026-10-28 15:00:00",
       ended_at: "2026-10-28 15:03:10",
       outcome: "FOLLOW_UP_REQUIRED",
-      notes: "Priya confirmed vision is clear without pain. Traveling until Friday. Requested callback Saturday morning to confirm eye exam.",
+      notes:
+        "Priya confirmed vision is clear without pain. Traveling until Friday. Requested callback Saturday morning to confirm eye exam.",
       transcript_summary: `[00:02] Maya (AI): Hello Priya, this is Maya calling from Apex Multispecialty Hospital's Eye Care Department.
 [00:07] Patient: Hello Maya, yes I am here.
 [00:09] Maya (AI): I'm following up on your left eye cataract surgery with Dr. Ananya Iyer. How is your vision feeling in bright light?
 [00:17] Patient: Everything is sharp! Just a little dry in the evenings, but I use the lubricating drops.
 [00:24] Maya (AI): That's typical during the initial weeks. Dr. Iyer has an opening tomorrow at 09:30 AM for your pressure check.
 [00:32] Patient: I am out of town until Friday evening. Could you call me back on Saturday?
-[00:38] Maya (AI): Certainly, Priya. I have scheduled a callback for Saturday morning. Please continue your protective sunglasses outdoors. Take care!`
+[00:38] Maya (AI): Certainly, Priya. I have scheduled a callback for Saturday morning. Please continue your protective sunglasses outdoors. Take care!`,
     },
   ];
 

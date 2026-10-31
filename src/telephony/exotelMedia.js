@@ -39,12 +39,53 @@ const SUPPORTED_RATES = [8000, 16000, 24000];
 const SUPPORTED_ENCODINGS = ["audio/x-raw", "base64"];
 
 const NON_NAME_STOP_WORDS = new Set([
-  "good", "fine", "ok", "okay", "great", "well", "bad", "sick", "suffering",
-  "having", "feeling", "calling", "looking", "trying", "wondering", "asking",
-  "speaking", "here", "there", "back", "sorry", "yes", "no", "not", "just",
-  "doing", "patient", "someone", "doctor", "sure", "listening", "free",
-  "interested", "available", "ready", "scheduled", "confirming", "waiting",
-  "a", "an", "the", "in", "at", "to", "for", "with", "from"
+  "good",
+  "fine",
+  "ok",
+  "okay",
+  "great",
+  "well",
+  "bad",
+  "sick",
+  "suffering",
+  "having",
+  "feeling",
+  "calling",
+  "looking",
+  "trying",
+  "wondering",
+  "asking",
+  "speaking",
+  "here",
+  "there",
+  "back",
+  "sorry",
+  "yes",
+  "no",
+  "not",
+  "just",
+  "doing",
+  "patient",
+  "someone",
+  "doctor",
+  "sure",
+  "listening",
+  "free",
+  "interested",
+  "available",
+  "ready",
+  "scheduled",
+  "confirming",
+  "waiting",
+  "a",
+  "an",
+  "the",
+  "in",
+  "at",
+  "to",
+  "for",
+  "with",
+  "from",
 ]);
 
 function isNonName(str) {
@@ -201,7 +242,8 @@ export function registerExotelMedia(server) {
           callSid: callSid || `EXO-${Date.now()}`,
           phone,
           patientId: newPatient.patientId,
-          callReason: activeContext.activeContext?.callReason || "New Patient Call",
+          callReason:
+            activeContext.activeContext?.callReason || "New Patient Call",
           outcome: "IN_PROGRESS",
           notes: `Identified and registered caller: ${newPatient.fullName} (${newPatient.patientId})`,
         });
@@ -274,7 +316,8 @@ export function registerExotelMedia(server) {
         process.env.TEST_PHONE_NUMBER ||
         "+918218627040";
       const finalReason =
-        activeContext?.activeContext?.callReason || "Outbound Hospital Follow-up";
+        activeContext?.activeContext?.callReason ||
+        "Outbound Hospital Follow-up";
       const finalSid = callSid || `EXO-${Date.now()}`;
 
       // If still a generic or temporary patient ID, extract caller's name from transcript as fallback
@@ -859,9 +902,9 @@ export function registerExotelMedia(server) {
               saveCallLog({
                 callSid: callSid || `EXO-${Date.now()}`,
                 phone:
-                  activeContext?.patient.phone ||
-                  process.env.TEST_PHONE_NUMBER,
-                patientId: booking.patientId || activeContext?.patient.patientId,
+                  activeContext?.patient.phone || process.env.TEST_PHONE_NUMBER,
+                patientId:
+                  booking.patientId || activeContext?.patient.patientId,
                 callReason: activeContext?.activeContext.callReason,
                 outcome: "APPOINTMENT_SCHEDULED",
                 notes: `Appointment ${booking.appointmentId} confirmed for ${booking.date} at ${booking.time}`,
@@ -878,8 +921,7 @@ export function registerExotelMedia(server) {
                           appointmentId: booking.appointmentId,
                           confirmedDate: booking.date,
                           confirmedTime: booking.time,
-                          doctor:
-                            activeContext?.doctor.name || "Clinic Doctor",
+                          doctor: activeContext?.doctor.name || "Clinic Doctor",
                           message: `Appointment ${booking.appointmentId} confirmed for ${booking.date} at ${booking.time} with ${activeContext?.doctor.name || "Dr. Sneha Rao"}.`,
                         },
                       },

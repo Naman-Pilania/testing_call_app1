@@ -230,7 +230,8 @@ router.get("/api/appointments", (_req, res) => {
   try {
     const db = getDb();
     const appointments = db
-      .prepare(`
+      .prepare(
+        `
         SELECT
           a.*,
           COALESCE(a.department, d.department, 'General Medicine') AS department,
@@ -242,7 +243,8 @@ router.get("/api/appointments", (_req, res) => {
         LEFT JOIN patients p ON a.patient_id = p.patient_id
         LEFT JOIN doctors d ON a.doctor_id = d.doctor_id
         ORDER BY a.created_at DESC
-      `)
+      `,
+      )
       .all();
     return res.json({ ok: true, count: appointments.length, appointments });
   } catch (error) {
@@ -335,7 +337,10 @@ router.post("/api/calls", async (req, res) => {
     const targetNumber = to || testPhoneNumber;
 
     // Indian mobile number in +91XXXXXXXXXX format.
-    if (typeof targetNumber !== "string" || !/^\+91\d{10}$/.test(targetNumber)) {
+    if (
+      typeof targetNumber !== "string" ||
+      !/^\+91\d{10}$/.test(targetNumber)
+    ) {
       return res.status(400).json({
         error: "Use an Indian mobile number in +91XXXXXXXXXX format",
       });
@@ -428,7 +433,9 @@ router.post("/api/calls", async (req, res) => {
       StreamUrl: finalStreamUrl,
       StreamType: "bidirectional",
       TimeLimit: "300",
-      CustomField: isNew ? "patient-NEW" : `patient-${activeContext.patient.patientId}`,
+      CustomField: isNew
+        ? "patient-NEW"
+        : `patient-${activeContext.patient.patientId}`,
     });
 
     const auth = Buffer.from(`${apiKey}:${apiToken}`).toString("base64");

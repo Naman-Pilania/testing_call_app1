@@ -55,7 +55,10 @@ export function prewarmGeminiSession({
   try {
     ws = new WebSocket(url.toString());
   } catch (err) {
-    console.error("[GeminiPrewarm] Failed to instantiate WebSocket:", err.message);
+    console.error(
+      "[GeminiPrewarm] Failed to instantiate WebSocket:",
+      err.message,
+    );
     return null;
   }
 
@@ -207,13 +210,16 @@ export function claimPrewarmedSession({
   patientId,
   phone,
 } = {}) {
-  console.log("[GeminiPrewarm] Attempting to claim prewarmed session with signals:", {
-    callSid,
-    customField,
-    patientId,
-    phone,
-    activeCount: activePrewarmedSessions.size,
-  });
+  console.log(
+    "[GeminiPrewarm] Attempting to claim prewarmed session with signals:",
+    {
+      callSid,
+      customField,
+      patientId,
+      phone,
+      activeCount: activePrewarmedSessions.size,
+    },
+  );
 
   let matched = null;
 
@@ -222,7 +228,9 @@ export function claimPrewarmedSession({
     for (const session of activePrewarmedSessions.values()) {
       if (!session.claimed && session.callSid === callSid) {
         matched = session;
-        console.log(`[GeminiPrewarm] Matched session ${session.id} by callSid '${callSid}'`);
+        console.log(
+          `[GeminiPrewarm] Matched session ${session.id} by callSid '${callSid}'`,
+        );
         break;
       }
     }
@@ -236,7 +244,9 @@ export function claimPrewarmedSession({
       for (const session of activePrewarmedSessions.values()) {
         if (!session.claimed && session.patientId === pid) {
           matched = session;
-          console.log(`[GeminiPrewarm] Matched session ${session.id} by customField '${customField}'`);
+          console.log(
+            `[GeminiPrewarm] Matched session ${session.id} by customField '${customField}'`,
+          );
           break;
         }
       }
@@ -248,7 +258,9 @@ export function claimPrewarmedSession({
     for (const session of activePrewarmedSessions.values()) {
       if (!session.claimed && session.patientId === patientId) {
         matched = session;
-        console.log(`[GeminiPrewarm] Matched session ${session.id} by patientId '${patientId}'`);
+        console.log(
+          `[GeminiPrewarm] Matched session ${session.id} by patientId '${patientId}'`,
+        );
         break;
       }
     }
@@ -259,7 +271,9 @@ export function claimPrewarmedSession({
     for (const session of activePrewarmedSessions.values()) {
       if (!session.claimed && session.phone === phone) {
         matched = session;
-        console.log(`[GeminiPrewarm] Matched session ${session.id} by phone '${phone}'`);
+        console.log(
+          `[GeminiPrewarm] Matched session ${session.id} by phone '${phone}'`,
+        );
         break;
       }
     }

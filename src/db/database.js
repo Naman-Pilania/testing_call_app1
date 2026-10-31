@@ -3,10 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdirSync } from "node:fs";
 
-import {
-  SQL_SCHEMA,
-  validateContextContract,
-} from "./schema.js";
+import { SQL_SCHEMA, validateContextContract } from "./schema.js";
 import { getSeedData } from "./seedData.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -44,7 +41,9 @@ export function getDb() {
     (process.env.CLEAR_DB === "true" || process.env.RESET_DB === "true")
   ) {
     autoClearedOnStartup = true;
-    console.log("[DB] Auto-clearing and reseeding database due to CLEAR_DB/RESET_DB environment flag...");
+    console.log(
+      "[DB] Auto-clearing and reseeding database due to CLEAR_DB/RESET_DB environment flag...",
+    );
     clearDb({ reseed: true });
     return db;
   }
@@ -63,7 +62,9 @@ export function getDb() {
  * Can be called explicitly during resets or initial seeding.
  */
 export function seedDatabase(db = getRawDb()) {
-  console.log("Seeding Apex Multispecialty Hospital database with active data...");
+  console.log(
+    "Seeding Apex Multispecialty Hospital database with active data...",
+  );
 
   const { doctors, patients, activeContexts, appointmentSlots } = getSeedData();
 
@@ -294,14 +295,16 @@ export function lookupPatientContext({
       .get(patientRow.assigned_doctor_id);
 
     const openSlots = db
-      .prepare(`
+      .prepare(
+        `
         SELECT s.slot_id, s.doctor_id, d.name AS doctor_name, s.date, s.time
         FROM appointment_slots s
         LEFT JOIN doctors d ON s.doctor_id = d.doctor_id
         WHERE s.is_available = 1 AND (s.doctor_id = ? OR ? IS NULL)
         ORDER BY s.date ASC, s.time ASC
         LIMIT 6
-      `)
+      `,
+      )
       .all(patientRow.assigned_doctor_id, patientRow.assigned_doctor_id);
 
     let parsedAlerts = [];
@@ -335,8 +338,12 @@ export function lookupPatientContext({
           "Routine health checkup and clinical appointment scheduling",
         lastVisit: {
           date: activeCtxRow?.last_visit_date || "Recent visit",
-          procedure: activeCtxRow?.last_visit_procedure || "General consultation",
-          doctor: activeCtxRow?.last_visit_doctor || doctorRow?.name || "Hospital Consultant",
+          procedure:
+            activeCtxRow?.last_visit_procedure || "General consultation",
+          doctor:
+            activeCtxRow?.last_visit_doctor ||
+            doctorRow?.name ||
+            "Hospital Consultant",
           outcome:
             activeCtxRow?.last_visit_outcome || "Patient in good condition",
         },
@@ -353,8 +360,7 @@ export function lookupPatientContext({
         specialty:
           doctorRow?.specialty || "Consultant Physician & Diabetologist",
         department: doctorRow?.department || "General Medicine",
-        availableDays:
-          doctorRow?.available_days || "Monday through Saturday",
+        availableDays: doctorRow?.available_days || "Monday through Saturday",
       },
       availableSlots: openSlots.map((s) => ({
         slotId: s.slot_id,
@@ -373,14 +379,16 @@ export function lookupPatientContext({
   // Fallback: If not found in DB, return a structured New-Patient context
   const defaultDoctor = db.prepare("SELECT * FROM doctors LIMIT 1").get();
   const openSlots = db
-    .prepare(`
+    .prepare(
+      `
       SELECT s.slot_id, s.doctor_id, d.name AS doctor_name, s.date, s.time
       FROM appointment_slots s
       LEFT JOIN doctors d ON s.doctor_id = d.doctor_id
       WHERE s.is_available = 1
       ORDER BY s.date ASC, s.time ASC
       LIMIT 6
-    `)
+    `,
+    )
     .all();
 
   const fallbackContext = {
@@ -420,8 +428,7 @@ export function lookupPatientContext({
       specialty:
         defaultDoctor?.specialty || "Consultant Physician & Diabetologist",
       department: defaultDoctor?.department || "General Medicine",
-      availableDays:
-        defaultDoctor?.available_days || "Monday through Saturday",
+      availableDays: defaultDoctor?.available_days || "Monday through Saturday",
     },
     availableSlots: openSlots.map((s) => ({
       slotId: s.slot_id,
@@ -572,7 +579,11 @@ export function bookAppointment({
   let validPatientId = patientId;
   let existingPatient = null;
 
-  if (validPatientId && validPatientId !== "NEW" && !validPatientId.startsWith("NEW-")) {
+  if (
+    validPatientId &&
+    validPatientId !== "NEW" &&
+    !validPatientId.startsWith("NEW-")
+  ) {
     existingPatient = db
       .prepare("SELECT patient_id FROM patients WHERE patient_id = ?")
       .get(validPatientId);
@@ -584,7 +595,8 @@ export function bookAppointment({
     const assignedPhone = phone || defaultTestPhone;
     const resolvedName =
       patientName ||
-      (typeof notes === "string" && notes.match(/patient:?\s*([A-Za-z ]+)/i)?.[1]) ||
+      (typeof notes === "string" &&
+        notes.match(/patient:?\s*([A-Za-z ]+)/i)?.[1]) ||
       "New Registered Patient";
 
     const newPatient = createPatient({
@@ -594,13 +606,16 @@ export function bookAppointment({
       assignedDoctorId: doctorId || "DOC-MED",
       activeContext: {
         callGoal: "NEW_PATIENT_APPOINTMENT",
-        callReason: notes || treatmentType || "Direct appointment booking via Maya AI",
+        callReason:
+          notes || treatmentType || "Direct appointment booking via Maya AI",
         pendingAction: "Complete clinical intake at hospital reception",
       },
     });
 
     validPatientId = newPatient.patientId;
-    console.log(`[DB] Auto-created patient ${validPatientId} (${newPatient.fullName}) for appointment booking`);
+    console.log(
+      `[DB] Auto-created patient ${validPatientId} (${newPatient.fullName}) for appointment booking`,
+    );
   }
 
   let resolvedDoctorId = doctorId;
@@ -626,11 +641,13 @@ export function bookAppointment({
 
   const tx = db.transaction(() => {
     // Insert the appointment
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO appointments (
         appointment_id, patient_id, doctor_id, department, date, time, treatment_type, status, notes
       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SCHEDULED', ?)
-    `).run(
+    `,
+    ).run(
       appointmentId,
       validPatientId,
       resolvedDoctorId,
@@ -642,11 +659,13 @@ export function bookAppointment({
     );
 
     // Mark slot as booked if matching slot exists
-    db.prepare(`
+    db.prepare(
+      `
       UPDATE appointment_slots
       SET is_available = 0
       WHERE (doctor_id = ? OR ? IS NULL) AND date = ? AND time = ?
-    `).run(resolvedDoctorId, resolvedDoctorId, date, time);
+    `,
+    ).run(resolvedDoctorId, resolvedDoctorId, date, time);
   });
 
   tx();
@@ -678,7 +697,8 @@ export function saveCallLog({
 }) {
   const db = getDb();
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO call_logs (
       call_sid, phone, patient_id, call_reason, outcome, notes, transcript_summary, ended_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
@@ -694,7 +714,8 @@ export function saveCallLog({
       notes = excluded.notes,
       transcript_summary = excluded.transcript_summary,
       ended_at = excluded.ended_at
-  `).run(
+  `,
+  ).run(
     callSid,
     phone,
     patientId || null,
@@ -710,7 +731,9 @@ export function saveCallLog({
  */
 export function getAllPatients() {
   const db = getDb();
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(
+      `
     SELECT
       p.*,
       d.name AS assigned_doctor_name,
@@ -733,7 +756,9 @@ export function getAllPatients() {
     LEFT JOIN doctors d ON p.assigned_doctor_id = d.doctor_id
     LEFT JOIN active_contexts ac ON ac.patient_id = p.patient_id AND ac.is_active = 1
     ORDER BY p.patient_id ASC
-  `).all();
+  `,
+    )
+    .all();
 
   return rows.map((r) => {
     let medicalAlerts = [];
@@ -753,7 +778,8 @@ export function getAllPatients() {
       assignedDoctorId: r.assigned_doctor_id,
       assignedDoctorName: r.assigned_doctor_name || "Unassigned",
       assignedDoctorSpecialty: r.assigned_doctor_specialty || "",
-      assignedDoctorDepartment: r.assigned_doctor_department || "General Medicine",
+      assignedDoctorDepartment:
+        r.assigned_doctor_department || "General Medicine",
       medicalAlerts,
       insurancePlan: r.insurance_plan || "Standard Coverage",
       preferredTimeOfDay: r.preferred_time_of_day || "Morning",
@@ -761,19 +787,21 @@ export function getAllPatients() {
       createdAt: r.created_at,
       appointmentsCount: r.appointments_count || 0,
       callsCount: r.calls_count || 0,
-      activeContext: r.context_id ? {
-        contextId: r.context_id,
-        callGoal: r.call_goal,
-        callReason: r.call_reason,
-        lastVisitDate: r.last_visit_date,
-        lastVisitProcedure: r.last_visit_procedure,
-        lastVisitDoctor: r.last_visit_doctor,
-        lastVisitOutcome: r.last_visit_outcome,
-        pendingAction: r.pending_action,
-        recommendedDurationMinutes: r.recommended_duration_minutes,
-        urgency: r.urgency,
-        isActive: Boolean(r.context_is_active),
-      } : null,
+      activeContext: r.context_id
+        ? {
+            contextId: r.context_id,
+            callGoal: r.call_goal,
+            callReason: r.call_reason,
+            lastVisitDate: r.last_visit_date,
+            lastVisitProcedure: r.last_visit_procedure,
+            lastVisitDoctor: r.last_visit_doctor,
+            lastVisitOutcome: r.last_visit_outcome,
+            pendingAction: r.pending_action,
+            recommendedDurationMinutes: r.recommended_duration_minutes,
+            urgency: r.urgency,
+            isActive: Boolean(r.context_is_active),
+          }
+        : null,
     };
   });
 }
@@ -792,7 +820,8 @@ export function getPatientById(patientId) {
 export function getAllDepartments() {
   const db = getDb();
   return db
-    .prepare(`
+    .prepare(
+      `
       SELECT
         d.department AS name,
         COUNT(DISTINCT d.doctor_id) AS doctors_count,
@@ -801,7 +830,8 @@ export function getAllDepartments() {
       FROM doctors d
       GROUP BY d.department
       ORDER BY d.department ASC
-    `)
+    `,
+    )
     .all()
     .map((dep) => ({
       name: dep.name,
@@ -852,7 +882,8 @@ export function getAllDoctors({ department } = {}) {
 export function getAllCallLogs() {
   const db = getDb();
   return db
-    .prepare(`
+    .prepare(
+      `
       SELECT
         c.*,
         p.full_name AS patient_name,
@@ -861,13 +892,22 @@ export function getAllCallLogs() {
       LEFT JOIN patients p ON (c.patient_id IS NOT NULL AND c.patient_id = p.patient_id)
                            OR (c.patient_id IS NULL AND c.phone = p.phone)
       ORDER BY c.started_at DESC
-    `)
+    `,
+    )
     .all()
     .map((c) => {
       let resolvedName = c.patient_name;
-      if (!resolvedName || resolvedName === "Valued Patient" || resolvedName === "Unknown Caller") {
-        const regMatch = c.notes?.match(/Registered new patient:\s*([A-Za-z ]+?)(?:\s*\([A-Z0-9-]+\)| -|$)/i);
-        const apptMatch = c.notes?.match(/Appointment .*? confirmed for .*? with .*? for ([A-Za-z ]+)/i);
+      if (
+        !resolvedName ||
+        resolvedName === "Valued Patient" ||
+        resolvedName === "Unknown Caller"
+      ) {
+        const regMatch = c.notes?.match(
+          /Registered new patient:\s*([A-Za-z ]+?)(?:\s*\([A-Z0-9-]+\)| -|$)/i,
+        );
+        const apptMatch = c.notes?.match(
+          /Appointment .*? confirmed for .*? with .*? for ([A-Za-z ]+)/i,
+        );
         const callMatch = c.notes?.match(/Call connected with ([A-Za-z ]+)/i);
         if (regMatch?.[1]) {
           resolvedName = regMatch[1].trim();
@@ -905,7 +945,8 @@ export function getAllCallLogs() {
 export function getCallLogBySid(callSid) {
   const db = getDb();
   const c = db
-    .prepare(`
+    .prepare(
+      `
       SELECT
         c.*,
         p.full_name AS patient_name,
@@ -917,15 +958,24 @@ export function getCallLogBySid(callSid) {
                            OR (c.patient_id IS NULL AND c.phone = p.phone)
       LEFT JOIN doctors d ON p.assigned_doctor_id = d.doctor_id
       WHERE c.call_sid = ?
-    `)
+    `,
+    )
     .get(callSid);
 
   if (!c) return null;
 
   let resolvedName = c.patient_name;
-  if (!resolvedName || resolvedName === "Valued Patient" || resolvedName === "Unknown Caller") {
-    const regMatch = c.notes?.match(/Registered new patient:\s*([A-Za-z ]+?)(?:\s*\([A-Z0-9-]+\)| -|$)/i);
-    const apptMatch = c.notes?.match(/Appointment .*? confirmed for .*? with .*? for ([A-Za-z ]+)/i);
+  if (
+    !resolvedName ||
+    resolvedName === "Valued Patient" ||
+    resolvedName === "Unknown Caller"
+  ) {
+    const regMatch = c.notes?.match(
+      /Registered new patient:\s*([A-Za-z ]+?)(?:\s*\([A-Z0-9-]+\)| -|$)/i,
+    );
+    const apptMatch = c.notes?.match(
+      /Appointment .*? confirmed for .*? with .*? for ([A-Za-z ]+)/i,
+    );
     const callMatch = c.notes?.match(/Call connected with ([A-Za-z ]+)/i);
     if (regMatch?.[1]) {
       resolvedName = regMatch[1].trim();
@@ -992,12 +1042,14 @@ export function createPatient({
 
   const tx = db.transaction(() => {
     // 1. Insert patient profile
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO patients (
         patient_id, phone, full_name, preferred_name, age, gender,
         assigned_doctor_id, medical_alerts, insurance_plan, preferred_time_of_day, general_notes
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `,
+    ).run(
       patientId,
       String(phone),
       fullName,
@@ -1020,13 +1072,15 @@ export function createPatient({
       activeContext.pendingAction ||
       "Check patient status and schedule next consultation slot.";
 
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO active_contexts (
         context_id, patient_id, call_goal, call_reason,
         last_visit_date, last_visit_procedure, last_visit_doctor, last_visit_outcome,
         pending_action, recommended_duration_minutes, urgency, is_active
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-    `).run(
+    `,
+    ).run(
       contextId,
       patientId,
       callGoal,

@@ -28,7 +28,11 @@ export function initFillers() {
         const raw = fs.readFileSync(filePath);
         // Ensure even number of bytes for 16-bit PCM
         const evenRaw = raw.subarray(0, raw.length - (raw.length % 2));
-        const resampled = resamplePcm16(evenRaw, GEMINI_OUTPUT_RATE, EXOTEL_RATE);
+        const resampled = resamplePcm16(
+          evenRaw,
+          GEMINI_OUTPUT_RATE,
+          EXOTEL_RATE,
+        );
         fillerCache.set(key, resampled);
         console.log(
           `[Fillers] Loaded and pre-resampled ${key} (${resampled.length} bytes, ${(resampled.length / 32000).toFixed(2)}s @ 16kHz)`,
